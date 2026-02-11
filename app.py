@@ -12,29 +12,32 @@ PASSWORD = "888"
 TIMEOUT_SECONDS = 43200  # 12 小時
 
 # === 2. 核心技術：處理預覽與唯一 Key ===
-@st.cache_data(ttl=600)
-def get_audio_base64(url):
-    if not isinstance(url, str) or url == "": return None
-    # 自動處理 SharePoint 轉址下載
-    target_url = url.split('?')[0] + "?download=1" if "sharepoint.com" in url else url
+@st.cache_data(ttl=300)
+def load_data():
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(target_url, headers=headers, timeout=15)
-        if resp.status_code == 200:
-            b64 = base64.b64encode(resp.content).decode('utf-8')
-            return f"data:audio/mpeg;base64,{b64}"
-    except: return None
-    return None
+        df = pd.read_csv(CSV_URL)
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        
+        # 確保必要欄位存在
+        for col in ['title', 'link', 'category', 'type']:
+            if col not in df.columns: df[col] = ""
+        
+        df = df.fillna("")
 
-def get_embed_url(link):
-    if "drive.google.com" in link and "/view" in link:
-        return link.replace("/view", "/preview")
-    return link
-
-def generate_id(link):
-    """利用連結網址產生唯一的 10 位數代碼，不受資料排序影響"""
-    return hashlib.md5(str(link).encode()).hexdigest()[:10]
-
+        # === 核心修改：排除「案例資料庫」 ===
+        # 使用 str.contains 搭配 ~ (排除) 符號
+        df = df[~df['category'].astype(str).str.contains("案例資料庫", na=False)]
+        
+        # 排除圖片與純資料夾連結 (原本的邏輯)
+        img_ext = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
+        df = df[~df['title'].astype(str).str.lower().str.endswith(img_ext)]
+        df = df[~df['link'].astype(str).str.contains('/folders/')]
+        
+        return df.reset_index(drop=True)
+    except Exception as e:
+        st.error(f"表格載入失敗: {e}")
+        return pd.DataFrame()
+        
 # === 3. CSS 樣式與頁面設定 ===
 st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
 
