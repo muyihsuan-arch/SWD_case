@@ -91,7 +91,7 @@ def show_share_dialog(title, link, uid, is_video=False):
     # 外部分享：依類型判定
     if is_video:
         render_copy_ui("🌏 外部分享連結", "", is_disabled=True, 
-                       warning_msg="影片涉及『客戶版權』及『全家便利商店場域』，不提供對外分享。")
+                       warning_msg="影片涉及『客戶版權』或『全家便利商店場域』，不提供對外分享。")
     else:
         share_link = f"{SITE_URL}?id={uid}"
         render_copy_ui("🌏 外部分享連結 (客戶試聽/防下載)", share_link)
