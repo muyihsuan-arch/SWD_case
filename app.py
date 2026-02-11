@@ -82,17 +82,22 @@ def render_copy_ui(text_to_copy):
 def load_data():
     try:
         df = pd.read_csv(CSV_URL)
-        df.columns = df.columns.str.strip()
-        # 排除邏輯 (比照 HTML 版)
-        # 1. 排除標題與分類相同的行 (通常是重複標籤)
-        # 2. 排除資料夾連結
-        # 3. 排除純圖片
-        df = df[df['Title'].notna() & df['Link'].notna()]
+        
+        # 核心修正：將所有欄位名稱轉為小寫，並修剪掉多餘空格
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        
+        # 這樣之後程式碼統一用小寫 key 即可：
+        # df['title'], df['link'], df['category'], df['type']
+        
+        # 排除邏輯 (記得這裡也要改成小寫)
+        df = df[df['title'].notna() & df['link'].notna()]
         img_ext = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
-        df = df[~df['Title'].str.lower().endswith(img_ext)]
-        df = df[~df['Link'].str.contains('/folders/')]
+        df = df[~df['title'].str.lower().endswith(img_ext)]
+        df = df[~df['link'].str.contains('/folders/')]
+        
         return df
-    except:
+    except Exception as e:
+        st.error(f"資料載入失敗: {e}")
         return pd.DataFrame()
 
 # === 6. 主程式 ===
