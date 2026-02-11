@@ -3,66 +3,53 @@ import pandas as pd
 import streamlit.components.v1 as components
 import requests
 import base64
-import hashlib # 新增：用於產生唯一識別碼
+import hashlib
 import time
 
 # === 1. 設定區 ===
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnViFsUwWYASaR5i1PefsWE4b6-5wwqTbJFJG8vysgcHYZDKzq-wwK4hM4xOtet3B65UjohzRjh38C/pub?output=csv"
 PASSWORD = "888"
-TIMEOUT_SECONDS = 43200  # 12 小時
 
-# === 2. 核心技術：處理預覽與唯一 Key ===
+# === 2. 核心技術函數 (必須放在 main 之前) ===
+
+def generate_id(link):
+    """利用連結產生唯一 ID，解決 NameError 問題"""
+    return hashlib.md5(str(link).encode()).hexdigest()[:10]
+
+@st.cache_data(ttl=300)
+def get_audio_base64(url):
+    if not isinstance(url, str) or url == "": return None
+    target_url = url.split('?')[0] + "?download=1" if "sharepoint.com" in url else url
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(target_url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            b64 = base64.b64encode(resp.content).decode('utf-8')
+            return f"data:audio/mpeg;base64,{b64}"
+    except: return None
+    return None
+
+def get_embed_url(link):
+    if "drive.google.com" in link and "/view" in link:
+        return link.replace("/view", "/preview")
+    return link
+
+# === 3. 資料載入 (包含過濾案例資料庫邏輯) ===
 @st.cache_data(ttl=300)
 def load_data():
     try:
         df = pd.read_csv(CSV_URL)
         df.columns = [str(c).strip().lower() for c in df.columns]
         
-        # 確保必要欄位存在
         for col in ['title', 'link', 'category', 'type']:
             if col not in df.columns: df[col] = ""
         
         df = df.fillna("")
 
-        # === 核心修改：排除「案例資料庫」 ===
-        # 使用 str.contains 搭配 ~ (排除) 符號
+        # 核心修改：徹底排除「案例資料庫」且不區分大小寫
         df = df[~df['category'].astype(str).str.contains("案例資料庫", na=False)]
         
-        # 排除圖片與純資料夾連結 (原本的邏輯)
-        img_ext = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
-        df = df[~df['title'].astype(str).str.lower().str.endswith(img_ext)]
-        df = df[~df['link'].astype(str).str.contains('/folders/')]
-        
-        return df.reset_index(drop=True)
-    except Exception as e:
-        st.error(f"表格載入失敗: {e}")
-        return pd.DataFrame()
-        
-# === 3. CSS 樣式與頁面設定 ===
-st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
-
-st.markdown("""
-    <style>
-        .stButton button { border-radius: 20px; font-weight: bold; }
-        .category-tag { background-color: #f1f3f4; color: #5f6368; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 5px; }
-        /* 隱藏預設播放器下載按鈕 */
-        audio::-webkit-media-controls-enclosure { overflow: hidden; }
-    </style>
-""", unsafe_allow_html=True)
-
-# === 4. 資料載入 (強化魯棒性) ===
-@st.cache_data(ttl=300) # 縮短為 5 分鐘，以對應資料定時更新的需求
-def load_data():
-    try:
-        df = pd.read_csv(CSV_URL)
-        df.columns = [str(c).strip().lower() for c in df.columns]
-        
-        # 確保必要欄位存在
-        for col in ['title', 'link', 'category', 'type']:
-            if col not in df.columns: df[col] = ""
-        
-        df = df.fillna("")
-        # 排除邏輯
+        # 排除圖片與特定資料夾
         img_ext = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
         df = df[~df['title'].astype(str).str.lower().str.endswith(img_ext)]
         df = df[~df['link'].astype(str).str.contains('/folders/')]
@@ -72,12 +59,12 @@ def load_data():
         st.error(f"表格載入失敗: {e}")
         return pd.DataFrame()
 
-# === 5. 複製功能 ===
+# === 4. UI 元件 ===
 def render_copy_ui(text_to_copy):
     html_code = f"""
     <div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee;">
-        <input type="text" value="{text_to_copy}" id="copyInput" readonly style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <button onclick="copyToClipboard()" style="width: 100%; padding: 8px; background: #0097DA; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">📋 複製連結</button>
+        <input type="text" value="{text_to_copy}" id="copyInput" readonly style="width: 100%; padding: 8px; margin-bottom: 8px;">
+        <button onclick="copyToClipboard()" style="width: 100%; padding: 8px; background: #0097DA; color: white; border: none; border-radius: 5px; cursor: pointer;">📋 複製連結</button>
         <script>
             function copyToClipboard() {{
                 var copyText = document.getElementById("copyInput");
@@ -89,8 +76,10 @@ def render_copy_ui(text_to_copy):
     """
     components.html(html_code, height=120)
 
-# === 6. 主程式 ===
+# === 5. 主程式 ===
 def main():
+    st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
+
     if "logged_in" not in st.session_state: st.session_state.logged_in = False
     
     if not st.session_state.logged_in:
@@ -107,7 +96,6 @@ def main():
     df = load_data()
     if df.empty: return
 
-    # 搜尋與篩選介面
     search_query = st.text_input("🔍 搜尋品牌、產品關鍵字", placeholder="例如：房屋")
     
     col1, col2 = st.columns([1, 1])
@@ -117,7 +105,7 @@ def main():
     with col2:
         type_filter = st.radio("📑 媒體類型", ["全部", "企頻", "新鮮視", "側帶"], horizontal=True)
 
-    # 過濾邏輯
+    # 建立過濾遮罩
     mask = pd.Series([True] * len(df), index=df.index)
     if search_query:
         keys = search_query.lower().split()
@@ -129,27 +117,19 @@ def main():
         mask &= (df['type'].astype(str).str.contains(type_filter, case=False) | df['title'].astype(str).str.contains(type_filter, case=False))
 
     results = df[mask]
-    st.caption(f"🎯 找到 {len(results)} 筆結果")
+    st.caption(f"🎯 找到 {len(results)} 筆結果 (已自動排除案例資料庫)")
 
-    # 列表渲染
     for _, row in results.iterrows():
-        # 為每一筆資料產生基於 Link 的唯一 ID
-        uid = generate_id(row['link'])
-        
+        uid = generate_id(row['link']) # 呼叫 generate_id
         with st.expander(f"📄 {row['title']}"):
-            st.markdown(f"<span class='category-tag'>{row['category']}</span><span class='category-tag'>{row['type']}</span>", unsafe_allow_html=True)
+            st.write(f"🏷️ 分類：{row['category']} | 📌 類型：{row['type']}")
             
             t_low = str(row['title']).lower()
-            tp_low = str(row['type']).lower()
-            
-            # 音訊預覽
-            if any(ext in t_low for ext in ['.mp3', '.wav', '.m4a']) or "企頻" in tp_low:
+            if any(ext in t_low for ext in ['.mp3', '.wav', '.m4a']) or "企頻" in str(row['type']):
                 if st.button("▶️ 載入音訊", key=f"play_{uid}"):
-                    with st.spinner("載入中..."):
-                        b64 = get_audio_base64(row['link'])
-                        if b64: st.audio(b64)
-                        else: st.error("載入失敗")
-            # 影片/文件預覽
+                    b64 = get_audio_base64(row['link'])
+                    if b64: st.audio(b64)
+                    else: st.error("載入失敗")
             else:
                 st.components.v1.iframe(get_embed_url(row['link']), height=400)
 
@@ -157,7 +137,7 @@ def main():
             with c1:
                 st.link_button("↗ 開啟檔案", row['link'], use_container_width=True)
             with c2:
-                if st.button("🔗 複製連結", key=f"copy_{uid}", use_container_width=True):
+                if st.button("🔗 複製連結", key=f"cp_{uid}", use_container_width=True):
                     render_copy_ui(row['link'])
 
 if __name__ == "__main__":
