@@ -156,7 +156,7 @@ def main():
                     b64 = get_audio_base64(row['link'])
                     if b64: st.audio(b64)
             elif is_video:
-                st.info("📺 影片權限：限同仁觀看。")
+                st.info("📺 影片無法使用播放器。")
             else:
                 components.iframe(get_embed_url(row['link']), height=400)
             
