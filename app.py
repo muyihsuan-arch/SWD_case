@@ -41,10 +41,11 @@ def load_data():
         for col in ['title', 'link', 'category', 'type']:
             if col not in df.columns: df[col] = ""
         df = df.fillna("")
+        # 排除案例資料庫
         df = df[~df['category'].astype(str).str.contains("案例資料庫", na=False)]
+        # 排除圖片
         img_ext = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
         df = df[~df['title'].astype(str).str.lower().str.endswith(img_ext)]
-        df = df[~df['link'].astype(str).str.contains('/folders/')]
         df['uid'] = df['link'].apply(generate_id)
         return df.reset_index(drop=True)
     except: return pd.DataFrame()
@@ -89,26 +90,26 @@ def show_share_dialog(title, link, uid, is_video=False):
 def main():
     st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
     
-    # 初始化顯示筆數
     if 'display_count' not in st.session_state:
         st.session_state.display_count = 20
 
     df = load_data()
     if df.empty: return
 
-    # A. 客戶模式
+    # A. 客戶預覽模式
     params = st.query_params
     target_uid = params.get("id", None)
     if target_uid:
         target_row = df[df['uid'] == target_uid]
         if not target_row.empty:
             item = target_row.iloc[0]
-            if any(x in str(item['type']) for x in ["新鮮視", "側帶"]):
+            # 針對客戶模式的影片攔截
+            if ".mp4" in str(item['title']).lower() or "新鮮視" in str(item['type']) or "側帶" in str(item['type']):
                 st.error("此檔案涉及版權保護，不開放對外預覽。")
                 return
             st.subheader(f"🎵 作品預覽：{item['title']}")
             b64 = get_audio_base64(item['link'])
-            if b64: st.markdown(f'<audio controls controlsList="nodownload" style="width:100%;"><source src="{b64}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
+            if b64: st.audio(b64)
             if st.button("🏠 回到首頁"): st.query_params.clear(); st.rerun()
             return
 
@@ -121,9 +122,8 @@ def main():
                 if pw == PASSWORD: st.session_state.logged_in = True; st.rerun()
         return
 
-    # 搜尋與過濾
+    # 搜尋與篩選
     search_query = st.text_input("🔍 關鍵字搜尋")
-    # 當搜尋字串改變時，重置顯示筆數
     if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
         st.session_state.display_count = 20
         st.session_state.last_search = search_query
@@ -145,35 +145,41 @@ def main():
     results = df[mask]
     total_results = len(results)
     
-    # 渲染結果
+    # --- 渲染結果區 (這裡就是修改的位置) ---
     current_results = results.head(st.session_state.display_count)
     for _, row in current_results.iterrows():
         uid = row['uid']
-        is_video = any(x in str(row['type']) for x in ["新鮮視", "側帶"])
+        t_low = str(row['title']).lower()
+        # 判定是否為影片 (.mp4)
+        is_video = t_low.endswith('.mp4') or "新鮮視" in str(row['type']) or "側帶" in str(row['type'])
+        
         with st.expander(f"📄 {row['title']}"):
-            if any(ext in str(row['title']).lower() for ext in ['.mp3', '.wav', '.m4a']):
+            # 1. 音訊處理
+            if any(ext in t_low for ext in ['.mp3', '.wav', '.m4a']):
                 if st.button("▶️ 播放音訊", key=f"p_{uid}"):
                     b64 = get_audio_base64(row['link'])
                     if b64: st.audio(b64)
+            
+            # 2. 影片處理：移除播放器，改為提示
             elif is_video:
-                st.info("📺 影片無法使用播放器。")
+                st.info("📺 影像涉及『客戶版權』，不提供網頁直接播放。同仁請點擊下方『開啟檔案』觀看。")
+            
+            # 3. 其他格式 (如 PDF/Doc)
             else:
                 components.iframe(get_embed_url(row['link']), height=400)
             
+            # 按鈕區
             bt1, bt2 = st.columns(2)
             with bt1: st.link_button("↗ 開啟檔案", row['link'], use_container_width=True)
             with bt2:
                 if st.button("🔗 分享", key=f"s_{uid}", use_container_width=True):
                     show_share_dialog(row['title'], row['link'], uid, is_video=is_video)
 
-    # 「展開更多」按鈕邏輯
+    # 展開更多按鈕
     if total_results > st.session_state.display_count:
-        st.write(f"目前顯示 {st.session_state.display_count} 筆 / 共 {total_results} 筆")
-        if st.button("🔽 展開更多案例 (20筆)", use_container_width=True):
+        if st.button(f"🔽 展開更多案例 (目前 {st.session_state.display_count} / 共 {total_results} 筆)", use_container_width=True):
             st.session_state.display_count += 20
             st.rerun()
-    elif total_results > 0:
-        st.write(f"✨ 已顯示全部 {total_results} 筆結果")
 
 if __name__ == "__main__":
     main()
