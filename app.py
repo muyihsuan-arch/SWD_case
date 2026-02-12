@@ -76,35 +76,52 @@ def show_share_dialog(display_name, link, uid, is_video=False, is_image=False):
 
 # === 5. 主程式 ===
 def main():
+    # 1. 頁面基本設定 (必須在最上方)
     st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
-    if 'display_count' not in st.session_state: st.session_state.display_count = 20
+    
+    # 2. 初始化 Session State
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'display_count' not in st.session_state:
+        st.session_state.display_count = 20
 
     df = load_data()
-    if df.empty: return
+    if df.empty:
+        st.error("資料載入失敗，請檢查網路。")
+        return
 
-    # A. 客戶模式
+    # 3. 檢查網址參數 (客戶模式)
     params = st.query_params
     target_uid = params.get("id", None)
+
     if target_uid:
+        # --- 進入客戶模式 (不需登入，由 UID 驅動) ---
         target_row = df[df['uid'] == target_uid]
         if not target_row.empty:
             item = target_row.iloc[0]
-            t_low = str(item['title']).lower()
-            tp_low = str(item['type']).lower()
-            
-            # 安全檢查：客戶模式不允許看影片與圖片
-            is_vid = any(x in tp_low for x in ["新鮮視", "側帶"]) or any(ext in t_low for ext in ['.mp4', '.mov'])
-            is_img = any(ext in t_low for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
-            
-            if is_vid or is_img:
-                st.error("此檔案涉及版權保護，不開放對外預覽。")
-                return
-                
+            # (這裡放您原本的客戶模式顯示邏輯...)
             st.subheader(f"🎵 作品預覽：{item['short']}")
-            b64 = get_audio_base64(item['link'])
-            if b64: st.audio(b64)
-            if st.button("🏠 回到首頁"): st.query_params.clear(); st.rerun()
-            return
+            # ...
+            if st.button("🏠 回到首頁"):
+                st.query_params.clear()
+                st.rerun()
+            return # 客戶模式執行完後直接結束
+    
+    # 4. 內部模式：登入檢查 (只有在沒有 target_uid 時才會走到這)
+    if not st.session_state.logged_in:
+        st.markdown("<h2 style='text-align: center;'>🔒 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
+        with st.form("login_form"):
+            pw = st.text_input("請輸入內部資料庫密碼", type="password")
+            if st.form_submit_button("解鎖系統", use_container_width=True):
+                if pw == PASSWORD:
+                    st.session_state.logged_in = True
+                    st.rerun()
+                else:
+                    st.error("密碼錯誤")
+        return # 沒登入就結束，不顯示下方搜尋介面
+
+    # 5. 搜尋與列表渲染 (登入後可見)
+    # ... (原本的搜尋、過濾、展開更多邏輯)
 
     # B. 內部模式
     if "logged_in" not in st.session_state: st.session_state.logged_in = False
