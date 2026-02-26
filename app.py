@@ -138,7 +138,7 @@ def main():
                 
             st.subheader(f"🎵 作品預覽：{item['short']}")
             # 💡 此處新增您要求的外部連結警語
-            st.warning("⚠️ 此連結僅供參考，未經授權請勿分享或錄製。")
+            st.warning("⚠️ 此連結僅供參考，未經授權請勿分享或錄製，如有違規可能涉及法律裁處，務必知悉。")
 
             b64 = get_audio_base64(item['link'])
             if b64:
