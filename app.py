@@ -128,7 +128,7 @@ def main():
             tp_low = str(item['type']).lower()
             
             # 客戶端安全檢查：禁止預覽影片與圖片
-            is_vid = any(x in tp_low for x in ["新鮮視", "側帶"]) or any(ext in t_low for ext in ['.mp4', '.mov'])
+            is_vid = any(x in tp_low for x in ["新鮮視", "側帶", "demo"]) or any(ext in t_low for ext in ['.mp4', '.mov'])
             is_img = any(ext in t_low for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
             
             if is_vid or is_img:
@@ -173,7 +173,8 @@ def main():
         cat_list = sorted([str(x) for x in df['category'].unique() if str(x).strip()])
         sel_cat = st.selectbox("📂 分類過濾", ["全部"] + cat_list)
     with c2:
-        type_filter = st.radio("📑 類型過濾", ["全部", "企頻", "新鮮視", "側帶"], horizontal=True)
+        # 💡 已在此處新增 "demo" 選項
+        type_filter = st.radio("📑 類型過濾", ["全部", "企頻", "新鮮視", "側帶", "demo"], horizontal=True)
 
     # 搜尋邏輯：比對原始 Title 欄位
     mask = pd.Series([True] * len(df), index=df.index)
@@ -195,7 +196,8 @@ def main():
         t_low, tp_low = str(row['title']).lower(), str(row['type']).lower()
         
         is_audio = any(ext in t_low for ext in ['.mp3', '.wav', '.m4a']) or "企頻" in tp_low
-        is_video = any(x in tp_low for x in ["新鮮視", "側帶"]) or any(ext in t_low for ext in ['.mp4', '.mov'])
+        # 💡 將 demo 納入影片類保護邏輯
+        is_video = any(x in tp_low for x in ["新鮮視", "側帶", "demo"]) or any(ext in t_low for ext in ['.mp4', '.mov'])
         is_image = any(ext in t_low for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 
         with st.expander(f"📄 {display_name}"):
