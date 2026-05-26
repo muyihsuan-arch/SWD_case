@@ -264,18 +264,19 @@ def main():
 
         st.markdown("---")
         
-       # 下方控制列 (安全抹除記憶版 - 徹底修復 APIException)
+       # 下方控制列 (保留進度版：支援刪減後回頭補選)
         c_back, c_action = st.columns([1, 4])
         with c_back:
-            if st.button("🔙 重挑案例", use_container_width=True, key="unique_back_btn"):
-                # 1. 清空勾選清單
-                st.session_state.selected_uids = []
-                # 2. 退回第一階段
+            # 💡 將按鈕名稱改為「返回挑選」，並移除清空清單的指令
+            if st.button("🔙 返回挑選更多案例", use_container_width=True, key="back_to_pick_more"):
+                # 1. 關鍵：不再執行 st.session_state.selected_uids = []
+                
+                # 2. 退回第一階段搜尋頁
                 st.session_state.confirmed_stage = False
                 
-                # 3. 💡 改用安全抹除法：直接把這個文字欄位的記憶標籤刪掉，讓系統重整時自動恢復預設值
-                if "custom_ppt_title_input" in st.session_state:
-                    del st.session_state["custom_ppt_title_input"]
+                # 3. 保持文字欄位狀態 (若有需要重設大標才執行 del，否則保留即可)
+                # if "custom_ppt_title_input" in st.session_state:
+                #     del st.session_state["custom_ppt_title_input"]
                     
                 st.rerun()
                 
