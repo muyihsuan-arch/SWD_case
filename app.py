@@ -216,7 +216,7 @@ def main():
         with c_status:
             st.markdown(f"📥 已挑選進度： **{len(st.session_state.selected_uids)} / 6**")
         with c_ok:
-            if st.button("👌 確認挑選項目", use_container_width=True, type="primary" if st.session_state.selected_uids else "secondary"):
+            if st.button("👌 確認挑選項目", use_container_width=True, key="confirm_selection_main_btn", type="primary" if st.session_state.selected_uids else "secondary"):
                 if st.session_state.selected_uids:
                     st.session_state.confirmed_stage = True
                     st.rerun()
@@ -316,6 +316,7 @@ def main():
             if matched_rows.empty: continue
             case_row = matched_rows.iloc[0]
             case_title = str(case_row['short'])
+            case_type_str = str(case_row['type'])
             
             guessed_logo_for_this_row = "請選擇確切客戶 Logo"
             if not logo_df.empty:
@@ -343,6 +344,7 @@ def main():
                 
                 final_pack_pairs[picked_uid] = {
                     'case_title': case_title,
+                    'case_type': case_type_str,
                     'case_link': case_row['link'], 
                     'logo_name': chosen_logo_for_row,
                     'logo_file_id': file_id
@@ -371,7 +373,7 @@ def main():
                 
                 ppt_buffer = io.BytesIO()
                 
-                if st.button("🎨 確認無誤！開始排版並下載六宮格提案 PPTX", use_container_width=True, type="primary"):
+                if st.button("🎨 確認無誤！開始排版並下載六宮格提案 PPTX", use_container_width=True, key="generate_final_pptx_execution_btn", type="primary"):
                     with st.spinner("🚀 正在下載多媒體素材並極速封裝簡報中..."):
                         try:
                             prs = Presentation()
@@ -412,14 +414,23 @@ def main():
                                 p_case.font.size = Pt(11)
                                 p_case.font.name = "Microsoft JhengHei"
                                 
-                                # 影音雙軌下載與實體嵌入
+                                # ⚡ 終極嚴格影音雙軌識別邏輯：避免任何誤判
+                                title_lower = info['case_title'].lower()
+                                type_lower = info['case_type'].lower()
+                                
+                                is_mp4 = (
+                                    any(ext in title_lower for ext in ['.mp4', '.mov']) or 
+                                    any(k in title_lower for k in ['新鮮視', '側帶', 'demo']) or
+                                    any(k in type_lower for k in ['新鮮視', '側帶', 'demo'])
+                                )
+                                
+                                # 影音下載與實體嵌入
                                 if info['case_link']:
                                     try:
                                         media_url = info['case_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_link'] else info['case_link']
                                         resp_media = requests.get(media_url, headers=headers, timeout=20)
                                         
                                         if resp_media.status_code == 200:
-                                            is_mp4 = any(ext in info['case_title'].lower() for ext in ['.mp4', '.mov']) or "新鮮視" in info['case_title'] or "側帶" in info['case_title']
                                             suffix_str = '.mp4' if is_mp4 else '.mp3'
                                             mime_str = 'video/mp4' if is_mp4 else 'audio/mpeg'
                                             
@@ -427,16 +438,15 @@ def main():
                                                 tmp_media.write(resp_media.content)
                                                 tmp_media_path = tmp_media.name
                                             
-                                            # 💡 終極優化修正核心：將影音下載分成完全獨立的兩套建構方式
                                             if is_mp4:
-                                                # 📺 實體影片：在投影片內生成一個精緻的小播放框 (poster_frame_image 設定為 None，徹底拒絕小喇叭！)
+                                                # 📺 實體影片：強迫在投影片內生成一個實體影片播放框（絕對不傳圖片流，避免任何小喇叭陰魂不散）
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
                                                     current_x + Inches(0.2),
                                                     current_y + Inches(0.65),
                                                     width=Inches(1.4),
                                                     height=Inches(1.0),
-                                                    poster_frame_image=None,  # 👈 拒絕小喇叭圖標，保留原始實體影片框
+                                                    poster_frame_image=None,  # 👈 徹底清除小喇叭，保留原始實體影片框
                                                     mime_type=mime_str
                                                 )
                                             else:
@@ -461,8 +471,7 @@ def main():
                                         direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
                                         resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
                                         if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
-                                            is_mp4_layout = any(ext in info['case_title'].lower() for ext in ['.mp4', '.mov']) or "新鮮視" in info['case_title'] or "側帶" in info['case_title']
-                                            x_offset = Inches(1.8) if is_mp4_layout else Inches(1.0)
+                                            x_offset = Inches(1.8) if is_mp4 else Inches(1.0)
                                             
                                             slide.shapes.add_picture(
                                                 io.BytesIO(resp_logo.content), 
@@ -482,6 +491,7 @@ def main():
                                 file_name=f"媒體通路提案簡報_{today_str}.pptx",
                                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                                 use_container_width=True,
+                                key="final_download_pptx_stream_btn",
                                 type="primary"
                             )
                         except Exception as e:
