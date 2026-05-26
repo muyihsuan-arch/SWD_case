@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import streamlit.components.v1 as components
 import requests
+import io
 import base64
 import hashlib
 import os
@@ -122,7 +123,7 @@ def show_share_dialog(display_name, link, uid, is_video=False, is_image=False):
 def main():
     st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
     
-    # 💡 核心優化：直接注入全域網頁樣式，一勞永逸強制把輸入框右下角的 "Press Enter to apply" 英文徹底隱藏！
+    # 直接注入全域網頁樣式，一勞永逸強制把輸入框右下角的 "Press Enter to apply" 英文徹底隱藏！
     st.markdown("""
         <style>
         .stTextInput div[data-testid="stWidgetInstructions"] {
@@ -200,7 +201,6 @@ def main():
                     is_audio_file = any(ext in t_low for ext in ['.mp3', '.wav', '.m4a']) or "企頻" in str(case_info['type']).lower()
                     
                     if is_audio_file:
-                        # 採用手機最流暢的被動手動載入，點擊才解碼下載，絕不卡死手機瀏覽器
                         if st.button("▶️ 載入音訊", key=f"panel_play_{uid}", use_container_width=True):
                             with st.spinner("載入中..."):
                                 b64 = get_audio_base64(case_info['link'])
@@ -214,12 +214,11 @@ def main():
                         st.rerun()
             st.markdown("---")
 
-        # 進度條與確認按鈕
+        # 進度條與確認按鈕 (💡 圖1修正核心：這裡已經完全移除舊的頂部重複按鈕，統一留在進度列旁，且字樣已正名為「確認挑選項目」)
         c_status, c_ok = st.columns([3, 2])
         with c_status:
             st.markdown(f"📥 已挑選進度： **{len(st.session_state.selected_uids)} / 6**")
         with c_ok:
-            # 完美更名為「確認挑選項目」
             if st.button("👌 確認挑選項目", use_container_width=True, type="primary" if st.session_state.selected_uids else "secondary"):
                 if st.session_state.selected_uids:
                     st.session_state.confirmed_stage = True
@@ -364,7 +363,6 @@ def main():
         
         c_back, c_action = st.columns([1, 4])
         with c_back:
-            # 返回挑選時，完美保留當前選中的剩餘進度，支援增量換血！
             if st.button("🔙 返回挑選更多案例", use_container_width=True, key="unique_back_btn"):
                 st.session_state.confirmed_stage = False
                 st.rerun()
@@ -378,14 +376,14 @@ def main():
                 ppt_buffer = io.BytesIO()
                 
                 if st.button("🎨 確認無誤！開始排版並下載六宮格提案 PPTX", use_container_width=True, type="primary"):
-                    with st.spinner("🚀 正在跨雲端拉取素材並生成實體影音簡報中..."):
+                    with st.spinner("🚀 正在下載多媒體素材並極速封裝簡報中..."):
                         try:
                             prs = Presentation()
                             prs.slide_width = Inches(13.333)
                             prs.slide_height = Inches(7.5)
                             slide = prs.slides.add_slide(prs.slide_layouts[6])
                             
-                            # 1. 實現大標題：全寬、絕對置中、字級 36 級字
+                            # 大標題：全寬、絕對置中、字級 36 級字
                             title_box = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12.133), Inches(1.0))
                             tf = title_box.text_frame
                             tf.word_wrap = True
@@ -434,7 +432,7 @@ def main():
                                                 tmp_media_path = tmp_media.name
                                             
                                             if is_mp4:
-                                                # 📺 實體影片：在投影片內生成一個精緻的小播放框
+                                                # 📺 實體影片播放預覽框
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
                                                     current_x + Inches(0.2),
@@ -445,7 +443,7 @@ def main():
                                                     mime_type=mime_str
                                                 )
                                             else:
-                                                # 🎵 實體音訊：綁定精美去背小喇叭外觀圖片
+                                                # 🎵 實體音訊：綁定高質感去背小喇叭外觀圖片
                                                 poster_stream = io.BytesIO(icon_bytes) if icon_bytes else None
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
@@ -460,13 +458,12 @@ def main():
                                             except: pass
                                     except: pass
                                 
-                                # 嵌入去背品牌 Logo 圖片 (自動防重疊橫移排版)
+                                # 嵌入去背品牌 Logo 圖片
                                 if info.get('logo_file_id') and info['logo_name'] != "請選擇確切客戶 Logo":
                                     try:
                                         direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
                                         resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
                                         if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
-                                            # 如果旁邊有影片預覽框，Logo往右多讓出一些空間
                                             is_mp4_layout = any(ext in info['case_title'].lower() for ext in ['.mp4', '.mov']) or "新鮮視" in info['case_title'] or "側帶" in info['case_title']
                                             x_offset = Inches(1.8) if is_mp4_layout else Inches(1.0)
                                             
