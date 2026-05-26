@@ -372,8 +372,8 @@ def main():
                             if info['case_audio_link']:
                                 run.hyperlink.address = info['case_audio_link']
                             
-                            # 💡 抓取實體圖片並嵌入 PPT (下方)
-                            if info['logo_file_id']:
+                          # 💡 抓取實體圖片並嵌入 PPT (下方)
+                            if info.get('logo_file_id'):  # 👈 這裡已修正為 logo_file_id，並改用 .get() 防爆
                                 try:
                                     # 使用高畫質免密鑰直連網址
                                     direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
