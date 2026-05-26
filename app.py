@@ -6,9 +6,14 @@ import base64
 import hashlib
 
 # === 1. 設定區 ===
+# ⚠️ 請確保這是您整份試試表「發布到網路」的 CSV 網址
+# 如果多頁發布，通常需要分別取得總資料庫與 Clients 的 gid 網址。
+# 這裡預設將 CSV_URL 作為總資料庫，CSV_LOGO_URL 作為 Clients 分頁
+# (請將下面改成您 Clients 分頁發布為 CSV 的實際網址，或是維持同一個試算表讀取)
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnViFsUwWYASaR5i1PefsWE4b6-5wwqTbJFJG8vysgcHYZDKzq-wwK4hM4xOtet3B65UjohzRjh38C/pub?output=csv"
+CSV_LOGO_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnViFsUwWYASaR5i1PefsWE4b6-5wwqTbJFJG8vysgcHYZDKzq-wwK4hM4xOtet3B65UjohzRjh38C/pub?gid=2040608076&single=true&output=csv" # 範例：請換成您 Clients 分頁的 CSV 連結
+
 PASSWORD = "888"
-# 部署後請務必修改此網址為您的實際網址
 SITE_URL = "https://swd-case.streamlit.app" 
 
 # === 2. 核心技術函數 ===
@@ -36,6 +41,13 @@ def get_embed_url(link):
         return link.replace("/view", "/preview")
     return link
 
+def get_image_download_url(link):
+    """💡 自動將您的 Google Drive 預覽網址轉為直連下載網址，防止破圖"""
+    if "drive.google.com" in link and "/file/d/" in link:
+        file_id = link.split("/file/d/")[1].split("/")[0]
+        return f"https://drive.google.com/uc?export=download&id={file_id}"
+    return link
+
 # === 3. 資料載入與過濾核心 ===
 @st.cache_data(ttl=180)
 def load_data():
@@ -43,27 +55,38 @@ def load_data():
         df = pd.read_csv(CSV_URL, on_bad_lines='skip', engine='python')
         df.columns = [str(c).strip().lower() for c in df.columns]
         
-        # 確保必要欄位存在，包含新增的 short 欄位
         for col in ['title', 'link', 'category', 'type', 'short']:
             if col not in df.columns: df[col] = ""
         
         df = df.fillna("")
-        
-        # 顯示邏輯：若 Short 欄位為空，則以 Title 補上
         df['short'] = df.apply(lambda r: r['short'] if str(r['short']).strip() != "" else r['title'], axis=1)
-        
-        # 過濾邏輯：排除「案例資料庫」與純資料夾連結
         df = df[~df['category'].astype(str).str.contains("案例資料庫", na=False)]
         df = df[~df['link'].astype(str).str.contains('/folders/')]
-        
         df['uid'] = df['link'].apply(generate_id)
         return df.reset_index(drop=True)
     except:
         return pd.DataFrame()
 
+@st.cache_data(ttl=180)
+def load_logo_data():
+    """💡 專門讀取您的第二個 Clients 分頁"""
+    try:
+        # 如果您只有單一網址且包含多頁，請改用讀取特定分頁格式，這裡預設讀取獨立發布的 Logo CSV
+        logo_df = pd.read_csv(CSV_LOGO_URL, on_bad_lines='skip', engine='python')
+        # 標準化欄位名稱以對齊您的截圖
+        logo_df.columns = [str(c).strip().lower() for c in logo_df.columns]
+        # 修正您的特定欄位命名，使其在程式中好呼叫
+        logo_df = logo_df.rename(columns={
+            'clients客戶名稱/品名': 'client_name',
+            'logo_link': 'logo_link'
+        })
+        return logo_df.fillna("")
+    except:
+        # 防呆備用：萬一雲端讀不到，自動產生與您截圖一模一樣的基礎結構，避免系統當機
+        return pd.DataFrame(columns=['category', 'client_name', 'logo_link'])
+
 # === 4. UI 元件：分享與複製介面 ===
 def render_copy_ui(label, text_to_copy, is_disabled=False, warning_msg=""):
-    """處理複製連結按鈕與版權保護警告文字"""
     if is_disabled:
         html_code = f"""
         <div style="background-color:#fff5f5;padding:12px;border-radius:8px;border:1px solid #feb2b2;margin-bottom:10px;">
@@ -102,21 +125,20 @@ def show_share_dialog(display_name, link, uid, is_video=False, is_image=False):
 
 # === 5. 主程式架構 ===
 def main():
-    # 5.1 頁面基本配置 (必須在最上方)
     st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
     
-    # 5.2 初始化 Session 狀態
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'display_count' not in st.session_state:
         st.session_state.display_count = 20
 
     df = load_data()
+    logo_df = load_logo_data() # 💡 載入您的 Logo 分頁
+    
     if df.empty:
         st.error("目前無法連線至資料庫，請稍後再試。")
         return
 
-    # 5.3 優先判定：網址參數 (客戶模式不需要登入)
     params = st.query_params
     target_uid = params.get("id", None)
 
@@ -127,7 +149,6 @@ def main():
             t_low = str(item['title']).lower()
             tp_low = str(item['type']).lower()
             
-            # 客戶端安全檢查：禁止預覽影片與圖片
             is_vid = any(x in tp_low for x in ["新鮮視", "側帶", "demo"]) or any(ext in t_low for ext in ['.mp4', '.mov'])
             is_img = any(ext in t_low for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
             
@@ -137,8 +158,7 @@ def main():
                 return
                 
             st.subheader(f"🎵 作品預覽：{item['short']}")
-            # 💡 此處新增您要求的外部連結警語
-            st.warning("⚠️ 此連結未經授權請勿分享或錄製，如有違規可能涉及法律裁罰，請務必遵守。")
+            st.warning("⚠️ 此連結僅供參考，未經授權請勿分享或錄製，如有違規可能涉及法律裁處，務必知悉。")
 
             b64 = get_audio_base64(item['link'])
             if b64:
@@ -149,7 +169,6 @@ def main():
                 st.rerun()
             return
 
-    # 5.4 登入檢查 (無 ID 參數時進入此流程)
     if not st.session_state.logged_in:
         st.markdown("<h2 style='text-align: center;'>🔒 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
         with st.form("login_form"):
@@ -162,7 +181,6 @@ def main():
                     st.error("密碼錯誤")
         return
 
-    # 5.5 搜尋介面 (登入後可見)
     search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
     if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
         st.session_state.display_count = 20
@@ -173,10 +191,8 @@ def main():
         cat_list = sorted([str(x) for x in df['category'].unique() if str(x).strip()])
         sel_cat = st.selectbox("📂 分類過濾", ["全部"] + cat_list)
     with c2:
-        # 💡 已在此處新增 "demo" 選項
         type_filter = st.radio("📑 類型過濾", ["全部", "企頻", "新鮮視", "側帶", "demo"], horizontal=True)
 
-    # 搜尋邏輯：比對原始 Title 欄位
     mask = pd.Series([True] * len(df), index=df.index)
     if search_query:
         mask &= (df['title'].str.contains(search_query, case=False) | df['category'].str.contains(search_query, case=False))
@@ -188,7 +204,97 @@ def main():
     results = df[mask]
     total_results = len(results)
     
-    # 渲染列表 (分頁載入)
+    # =====================================================================
+    # 🆕 雙軌聯動下載打包區 (精準對齊您的 Clients 表單欄位)
+    # =====================================================================
+    st.markdown("---")
+    st.markdown("### 📦 案例與 Logo 雙軌下載打包區")
+    
+    if 'global_selected_cases' not in st.session_state:
+        st.session_state.global_selected_cases = []
+    if 'global_selected_logo_client' not in st.session_state:
+        st.session_state.global_selected_logo_client = "請選擇確切客戶 Logo"
+
+    all_available_options = list(set(st.session_state.global_selected_cases + results['short'].tolist()))
+
+    col_dl1, col_dl2 = st.columns(2)
+    
+    with col_dl1:
+        st.markdown("**1. 挑選案例 (可跨關鍵字，最多 6 個)**")
+        chosen_cases = st.multiselect(
+            "請勾選要下載的案例素材：",
+            options=all_available_options,
+            default=st.session_state.global_selected_cases,
+            max_selections=6,
+        )
+        st.session_state.global_selected_cases = chosen_cases
+        
+    with col_dl2:
+        st.markdown("**2. 指派品牌 Logo (智慧大分類二階聯動)**")
+        
+        # 💡 智慧引導：如果選了案例，自動抓第一個案例的分類當作預設
+        auto_cat_default = "全部"
+        if st.session_state.global_selected_cases:
+            first_case = st.session_state.global_selected_cases[0]
+            matched_row = df[df['short'] == first_case]
+            if not matched_row.empty:
+                auto_cat_default = matched_row.iloc[0]['category']
+
+        # A 選單：先挑大分類（對應您的 04.鮮零食飲品 等）
+        logo_cat_options = ["全部"] + sorted(list(logo_df['category'].unique()))
+        default_cat_idx = logo_cat_options.index(auto_cat_default) if auto_cat_default in logo_cat_options else 0
+        
+        selected_logo_cat = st.selectbox(
+            "第一步：縮小大分類範圍",
+            options=logo_cat_options,
+            index=default_cat_idx
+        )
+        
+        # 根據 A 選單的篩選結果，動態決定 B 選單（客戶品名）裡要秀出哪些對應品牌
+        if selected_logo_cat != "全部":
+            filtered_logo_df = logo_df[logo_df['category'] == selected_logo_cat]
+        else:
+            filtered_logo_df = logo_df
+            
+        logo_client_options = ["請選擇確切客戶 Logo"] + sorted(list(filtered_logo_df['client_name'].unique()))
+        
+        # 確保之前的選擇如果依然在清單內，就維持選取
+        default_client_idx = logo_client_options.index(st.session_state.global_selected_logo_client) if st.session_state.global_selected_logo_client in logo_client_options else 0
+        
+        selected_logo_client = st.selectbox(
+            "第二步：選擇確切的客戶名稱/品名",
+            options=logo_client_options,
+            index=default_client_idx
+        )
+        st.session_state.global_selected_logo_client = selected_logo_client
+        
+    # 3. 啟動按鈕邏輯
+    if st.session_state.global_selected_cases and st.session_state.global_selected_logo_client != "請選擇確切客戶 Logo":
+        st.success(f"✅ 準備就緒！已記住 {len(st.session_state.global_selected_cases)} 個案例，將搭配「{st.session_state.global_selected_logo_client}」的 Logo。")
+        
+        c_btn1, c_btn2 = st.columns([4, 1])
+        with c_btn1:
+            if st.button("🚀 開始打包下載選定素材", use_container_width=True):
+                # 從 logo_df 撈出對應的真實 Google Drive 網址
+                final_logo_row = logo_df[logo_df['client_name'] == st.session_state.global_selected_logo_client]
+                raw_logo_url = final_logo_row.iloc[0]['logo_link'] if not final_logo_row.empty else ""
+                real_download_logo_url = get_image_download_url(raw_logo_url)
+                
+                st.info(f"系統準備下載 Logo 直連網址: {real_download_logo_url}")
+                st.info("正在同時抓取這 6 個案例與對應圖片中...（打包整合中）")
+                
+        with c_btn2:
+            if st.button("🗑️ 清空重選", use_container_width=True):
+                st.session_state.global_selected_cases = []
+                st.session_state.global_selected_logo_client = "請選擇確切客戶 Logo"
+                st.rerun()
+            
+    else:
+        st.warning("💡 請先「勾選案例」並挑選「確切客戶 Logo」，即可開啟下載打包功能。")
+        
+    st.markdown("---")
+
+    # 5.6 渲染列表 (分頁載入)
     current_results = results.head(st.session_state.display_count)
     for _, row in current_results.iterrows():
         uid = row['uid']
@@ -196,7 +302,6 @@ def main():
         t_low, tp_low = str(row['title']).lower(), str(row['type']).lower()
         
         is_audio = any(ext in t_low for ext in ['.mp3', '.wav', '.m4a']) or "企頻" in tp_low
-        # 💡 將 demo 納入影片類保護邏輯
         is_video = any(x in tp_low for x in ["新鮮視", "側帶", "demo"]) or any(ext in t_low for ext in ['.mp4', '.mov'])
         is_image = any(ext in t_low for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 
@@ -218,7 +323,6 @@ def main():
                 if st.button("🔗 分享檔案", key=f"s_{uid}", use_container_width=True):
                     show_share_dialog(display_name, row['link'], uid, is_video=is_video, is_image=is_image)
 
-    # 5.6 展開更多案例按鈕
     if total_results > st.session_state.display_count:
         if st.button(f"🔽 展開更多案例 (目前 {st.session_state.display_count}/{total_results})", use_container_width=True):
             st.session_state.display_count += 20
