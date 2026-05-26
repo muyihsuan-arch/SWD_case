@@ -163,9 +163,12 @@ def main():
                 else: st.error("密碼錯誤")
         return
 
+    # -----------------------------------------------------------------
+    # 【第一階段】頂部案例勾選狀態進度條
+    # -----------------------------------------------------------------
     st.markdown("<h2 style='text-align: center;'>📂 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
-    st.markdown("---")
     
+    st.markdown("---")
     c_status, c_ok = st.columns([4, 1])
     with c_status:
         st.markdown(f"### 📥 已挑選案例進度： **{len(st.session_state.selected_uids)} / 6**")
@@ -180,11 +183,14 @@ def main():
             else:
                 st.warning("請先在下方案例旁勾選！")
 
+    # -----------------------------------------------------------------
+    # 【第二階段】純企劃確認與調整頁 (此階段完全不抓取檔案，極速流暢)
+    # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
         <div style="background-color:#e0f2fe; padding:20px; border-radius:10px; border-left:5px solid #0284c7; margin: 15px 0;">
-            <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認各案例 Logo 與自訂簡報大標</h4>
-            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">請確認下方各案例對應的 Logo，音檔將在下載時「實體嵌入」至簡報中。</p>
+            <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認與更換案例素材</h4>
+            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">您可以在此自由微調、更換 Logo 或直接剔除案例。確認無誤後再行生成簡報。</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -194,12 +200,16 @@ def main():
         
         logo_options = ["請選擇確切客戶 Logo"] + sorted(list(logo_df['client_name'].unique())) if not logo_df.empty else ["請選擇確切客戶 Logo"]
         final_pack_pairs = {}
-        all_logos_assigned = True 
 
+        # 逐行跑案例確認清單
         for idx, picked_uid in enumerate(st.session_state.selected_uids):
-            case_row = df[df['uid'] == picked_uid].iloc[0]
+            # 防呆：避免因刪除操作造成索引錯誤
+            matched_rows = df[df['uid'] == picked_uid]
+            if matched_rows.empty: continue
+            case_row = matched_rows.iloc[0]
             case_title = str(case_row['short'])
             
+            # 智慧盲猜 Logo
             guessed_logo_for_this_row = "請選擇確切客戶 Logo"
             if not logo_df.empty:
                 for client in logo_df['client_name'].unique():
@@ -208,42 +218,65 @@ def main():
                         guessed_logo_for_this_row = client
                         break
             
-            c_case_lbl, c_logo_sel = st.columns([3, 2])
-            with c_case_lbl:
-                st.markdown(f"**案例 {idx+1}**")
-                st.info(f"📄 {case_title}")
-            with c_logo_sel:
-                st.markdown(f"**對應 Logo {idx+1}**")
-                default_idx = logo_options.index(guessed_logo_for_this_row) if guessed_logo_for_this_row in logo_options else 0
-                chosen_logo_for_row = st.selectbox(f"挑選 Logo {picked_uid}", options=logo_options, index=default_idx, key=f"sel_logo_pair_{picked_uid}", label_visibility="collapsed")
+            # 💡 排版：新增一個刪除欄位，變成 [案例Label, 案例標題資訊, Logo選擇, 刪除按鈕]
+            c_label, c_case_lbl, c_logo_sel, c_del = st.columns([1, 4, 3, 1])
+            
+            with c_label:
+                st.markdown(f"\n\n**案例 {idx+1}**")
                 
-                if chosen_logo_for_row == "請選擇確切客戶 Logo":
-                    all_logos_assigned = False
-                else:
-                    logo_row = logo_df[logo_df['client_name'] == chosen_logo_for_row]
-                    raw_url = logo_row.iloc[0]['logo_link'] if not logo_row.empty else ""
-                    
-                    file_id = ""
-                    if "/file/d/" in raw_url: file_id = raw_url.split("/file/d/")[1].split("/")[0]
-                    elif "id=" in raw_url: file_id = raw_url.split("id=")[1].split("&")[0]
-                    
-                    final_pack_pairs[picked_uid] = {
-                        'case_title': case_title,
-                        'case_audio_link': case_row['link'], 
-                        'logo_name': chosen_logo_for_row,
-                        'logo_file_id': file_id
-                    }
+            with c_case_lbl:
+                st.markdown("案例名稱")
+                st.info(f"📄 {case_title}")
+                
+            with c_logo_sel:
+                st.markdown("對應 Logo")
+                default_idx = logo_options.index(guessed_logo_for_this_row) if guessed_logo_for_this_row in logo_options else 0
+                chosen_logo_for_row = st.selectbox(
+                    f"選Logo_{picked_uid}", 
+                    options=logo_options, 
+                    index=default_idx, 
+                    key=f"sel_logo_pair_{picked_uid}", 
+                    label_visibility="collapsed"
+                )
+                
+                # 存入打包暫存字典
+                logo_row = logo_df[logo_df['client_name'] == chosen_logo_for_row]
+                raw_url = logo_row.iloc[0]['logo_link'] if not logo_row.empty else ""
+                file_id = ""
+                if "/file/d/" in raw_url: file_id = raw_url.split("/file/d/")[1].split("/")[0]
+                elif "id=" in raw_url: file_id = raw_url.split("id=")[1].split("&")[0]
+                
+                final_pack_pairs[picked_uid] = {
+                    'case_title': case_title,
+                    'case_audio_link': case_row['link'], 
+                    'logo_name': chosen_logo_for_row,
+                    'logo_file_id': file_id
+                }
+                
+            with c_del:
+                st.markdown("剔除")
+                # 💡 【全新功能】同仁如果覺得這格不想要，直接點擊按鈕從清單移除
+                if st.button("❌", key=f"del_item_{picked_uid}", use_container_width=True, help="將此案例移出本次簡報"):
+                    st.session_state.selected_uids.remove(picked_uid)
+                    st.rerun()
+
+            st.markdown("<div style='margin-bottom:-10px;'></div>", unsafe_allow_html=True) 
 
         st.markdown("---")
         
+        # 下方控制列
         c_back, c_action = st.columns([1, 4])
         with c_back:
             if st.button("🔙 重挑案例", use_container_width=True, key="unique_back_btn"):
+                st.session_state.selected_uids = []
                 st.session_state.confirmed_stage = False
+                if "custom_ppt_title_input" in st.session_state:
+                    st.session_state.custom_ppt_title_input = "合作夥伴案例分享"
                 st.rerun()
                 
         with c_action:
-            if all_logos_assigned:
+            # 💡 【第三階段】當同仁完全點擊下方按鈕，程式才真正執行跨雲端下載、打包與排版
+            if final_pack_pairs:
                 import io
                 from datetime import datetime
                 from pptx import Presentation
@@ -251,96 +284,99 @@ def main():
                 
                 ppt_buffer = io.BytesIO()
                 
-                with st.spinner("🚀 正在下載音檔與 Logo，並自動排版六宮格簡報中..."):
-                    try:
-                        prs = Presentation()
-                        prs.slide_width = Inches(13.333)
-                        prs.slide_height = Inches(7.5)
-                        slide = prs.slides.add_slide(prs.slide_layouts[6])
-                        
-                        # 簡報大標題
-                        title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(0.8))
-                        title_box.text_frame.paragraphs[0].text = str(custom_ppt_title).strip()
-                        title_box.text_frame.paragraphs[0].font.size = Pt(28)
-                        title_box.text_frame.paragraphs[0].font.bold = True
-                        title_box.text_frame.paragraphs[0].font.name = "Microsoft JhengHei"
-                        
-                        # 精準配對六宮格坐標 (避免物件交疊)
-                        x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
-                        y_coords = [Inches(1.8), Inches(4.6)]
-                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-                        
-                        for idx, (uid, info) in enumerate(final_pack_pairs.items()):
-                            if idx >= 6: break 
-                            row_idx, col_idx = idx // 3, idx % 3   
-                            current_x, current_y = x_coords[col_idx], y_coords[row_idx]
+                # 只有點下去時，才會觸發這個進度條與實體檔案下載
+                if st.button("🎨 確認無誤！開始排版並下載六宮格提案 PPTX", use_container_width=True, type="primary"):
+                    with st.spinner("🚀 正在執行跨雲端檔案拉取，並即時嵌入音訊與 Logo，請稍候..."):
+                        try:
+                            prs = Presentation()
+                            prs.slide_width = Inches(13.333)
+                            prs.slide_height = Inches(7.5)
+                            slide = prs.slides.add_slide(prs.slide_layouts[6])
                             
-                            # 1. 案例標題文字框 (高度設小，避免擋到下方的喇叭)
-                            text_box = slide.shapes.add_textbox(current_x, current_y, Inches(3.8), Inches(0.5))
-                            text_box.text_frame.word_wrap = True
-                            p_case = text_box.text_frame.paragraphs[0]
-                            p_case.text = f"🔹 {info['case_title']}"
-                            p_case.font.size = Pt(11)
-                            p_case.font.name = "Microsoft JhengHei"
+                            # 簡報大標題
+                            title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(0.8))
+                            title_box.text_frame.paragraphs[0].text = str(custom_ppt_title).strip()
+                            title_box.text_frame.paragraphs[0].font.size = Pt(28)
+                            title_box.text_frame.paragraphs[0].font.bold = True
+                            title_box.text_frame.paragraphs[0].font.name = "Microsoft JhengHei"
                             
-                            # 2. 終極修正：建立帶有實體副檔名的臨時音檔，確保轉碼器 100% 相容
-                            if info['case_audio_link']:
-                                try:
-                                    audio_url = info['case_audio_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_audio_link'] else info['case_audio_link']
-                                    resp_audio = requests.get(audio_url, headers=headers, timeout=15)
-                                    if resp_audio.status_code == 200:
-                                        # 建立帶有實體副檔名 .mp3 的臨時檔案，強迫 PowerPoint 的編碼器識別
-                                        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_audio:
-                                            tmp_audio.write(resp_audio.content)
-                                            tmp_audio_path = tmp_audio.name
+                            # 六宮格坐標
+                            x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
+                            y_coords = [Inches(1.8), Inches(4.6)]
+                            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                            
+                            for idx, (uid, info) in enumerate(final_pack_pairs.items()):
+                                if idx >= 6: break 
+                                row_idx, col_idx = idx // 3, idx % 3   
+                                current_x, current_y = x_coords[col_idx], y_coords[row_idx]
+                                
+                                # 1. 案例標題文字框
+                                text_box = slide.shapes.add_textbox(current_x, current_y, Inches(3.8), Inches(0.5))
+                                text_box.text_frame.word_wrap = True
+                                p_case = text_box.text_frame.paragraphs[0]
+                                p_case.text = f"🔹 {info['case_title']}"
+                                p_case.font.size = Pt(11)
+                                p_case.font.name = "Microsoft JhengHei"
+                                
+                                # 2. 下載微軟實體音檔並嵌入暫存
+                                if info['case_audio_link']:
+                                    try:
+                                        audio_url = info['case_audio_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_audio_link'] else info['case_audio_link']
+                                        resp_audio = requests.get(audio_url, headers=headers, timeout=15)
+                                        if resp_audio.status_code == 200:
+                                            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_audio:
+                                                tmp_audio.write(resp_audio.content)
+                                                tmp_audio_path = tmp_audio.name
+                                            
+                                            slide.shapes.add_movie(
+                                                tmp_audio_path,
+                                                current_x + Inches(0.2),
+                                                current_y + Inches(0.75),
+                                                width=Inches(0.4),
+                                                height=Inches(0.4),
+                                                poster_frame_image=None,
+                                                mime_type='audio/mpeg'
+                                            )
+                                            try: os.unlink(tmp_audio_path)
+                                            except: pass
+                                    except: pass
+                                
+                                # 3. 嵌入去背品牌 Logo 圖片
+                                if info.get('logo_file_id') and info['logo_name'] != "請選擇確切客戶 Logo":
+                                    try:
+                                        direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
+                                        resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
+                                        if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
+                                            slide.shapes.add_picture(
+                                                io.BytesIO(resp_logo.content), 
+                                                current_x + Inches(0.9), 
+                                                current_y + Inches(0.65), 
+                                                width=Inches(1.6)
+                                            )
+                                    except: pass
                                         
-                                        # 將喇叭圖示放置在文字框正下方 (Y + 0.75)
-                                        slide.shapes.add_movie(
-                                            tmp_audio_path,
-                                            current_x + Inches(0.2),
-                                            current_y + Inches(0.75),
-                                            width=Inches(0.4),
-                                            height=Inches(0.4),
-                                            poster_frame_image=None,
-                                            mime_type='audio/mpeg'
-                                        )
-                                        # 下載完成後將暫存檔清除乾淨
-                                        try: os.unlink(tmp_audio_path)
-                                        except: pass
-                                except: pass
+                            prs.save(ppt_buffer)
+                            ppt_buffer.seek(0)
+                            today_str = datetime.now().strftime("%Y%m%d")
                             
-                            # 3. 嵌入去背品牌 Logo 圖片 (往右橫移，不與左側的小喇叭撞車)
-                            if info.get('logo_file_id'):
-                                try:
-                                    direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
-                                    resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
-                                    if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
-                                        slide.shapes.add_picture(
-                                            io.BytesIO(resp_logo.content), 
-                                            current_x + Inches(0.9), # X 坐標往右調，避開小喇叭
-                                            current_y + Inches(0.65), # Y 坐標適中浮動
-                                            width=Inches(1.6)
-                                        )
-                                except: pass
-                                    
-                        prs.save(ppt_buffer)
-                        ppt_buffer.seek(0)
-                        today_str = datetime.now().strftime("%Y%m%d")
-                        
-                        st.download_button(
-                            label="🎨 簡報自動排版成功！點此下載六宮格提案 PPTX",
-                            data=ppt_buffer,
-                            file_name=f"媒體通路提案簡報_{today_str}.pptx",
-                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                            use_container_width=True,
-                            type="primary"
-                        )
-                    except Exception as e:
-                        st.error(f"❌ 簡報自動生成失敗，原因：{str(e)}")
+                            # 產出最終安全下載
+                            st.download_button(
+                                label="💾 簡報封裝完畢！點此儲存 PPTX 檔案至電腦",
+                                data=ppt_buffer,
+                                file_name=f"媒體通路提案簡報_{today_str}.pptx",
+                                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                use_container_width=True,
+                                type="primary"
+                            )
+                        except Exception as e:
+                            st.error(f"❌ 簡報自動生成失敗，原因：{str(e)}")
             else:
-                st.warning("⚠️ 提示：上方尚有案例未成功指派 Logo，請先手動搜尋選取。")
+                st.warning("⚠️ 您的挑選清單目前為空，請點選左下角返回重新挑選案例。")
         st.markdown("---")
 
+    # -----------------------------------------------------------------
+    # 【第一階段】搜尋與原始列表渲染 (僅在未確認狀態下顯示)
+    # -----------------------------------------------------------------
     if not st.session_state.confirmed_stage:
         search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
         if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
