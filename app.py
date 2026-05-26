@@ -216,57 +216,96 @@ def main():
                 st.warning("請先在下方案例旁勾選！")
 
     # -----------------------------------------------------------------
-    # 【階段二】跳出 Logo 建議與打包下載頁面
+    # 【階段二】跳出 Logo 建議與打包下載頁面 (1對1 上下排智慧對應版)
     # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
         <div style="background-color:#e0f2fe; padding:20px; border-radius:10px; border-left:5px solid #0284c7; margin: 15px 0;">
-            <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認品牌 Logo 與打包</h4>
+            <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認各案例對應的 Logo</h4>
+            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">系統已為您自動匹配建議。若不合適，您可直接點擊下拉選單「打字搜尋」正確的 Logo。</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # 1. 智慧型 Logo 關鍵字猜測
-        first_picked_uid = st.session_state.selected_uids[0]
-        first_picked_title = str(df[df['uid'] == first_picked_uid].iloc[0]['short'])
+        # 準備供手動搜尋的完整 Logo 清單
+        logo_options = ["請選擇確切客戶 Logo"] + sorted(list(logo_df['client_name'].unique())) if not logo_df.empty else ["請選擇確切客戶 Logo"]
         
-        guessed_logo = "請選擇確切客戶 Logo"
-        if not logo_df.empty:
-            for client in logo_df['client_name'].unique():
-                pure_name = str(client).split('_')[-1] if '_' in str(client) else str(client)
-                # 🛠️ 這裡已修正變數名稱不一致的問題
-                if pure_name in first_picked_title or str(client) in first_picked_title:
-                    guessed_logo = client
-                    break
+        # 建立一個字典，用來記錄每一個被選中案例最終決定搭配的 logo 網址
+        final_pack_pairs = {}
+        all_logos_assigned = True # 檢查是不是每一格都指派好 Logo 的旗標
 
-        col_logo_1, col_logo_2 = st.columns(2)
-        with col_logo_1:
-            st.markdown("**💡 系統提供的 Logo 建議**")
-            logo_options = ["請選擇確切客戶 Logo"] + sorted(list(logo_df['client_name'].unique())) if not logo_df.empty else ["請選擇確切客戶 Logo"]
+        # 這裡實施「上下排對應」：使用者勾幾個案例，就跑幾列橫條
+        for idx, picked_uid in enumerate(st.session_state.selected_uids):
+            case_row = df[df['uid'] == picked_uid].iloc[0]
+            case_title = str(case_row['short'])
             
-            # 設定下拉選單預設值
-            default_idx = logo_options.index(guessed_logo) if guessed_logo in logo_options else 0
+            # 💡 針對這個案例，獨立盲猜最適合的 Logo
+            guessed_logo_for_this_row = "請選擇確切客戶 Logo"
+            if not logo_df.empty:
+                for client in logo_df['client_name'].unique():
+                    pure_name = str(client).split('_')[-1] if '_' in str(client) else str(client)
+                    if pure_name in case_title or str(client) in case_title:
+                        guessed_logo_for_this_row = client
+                        break
             
-            final_logo = st.selectbox("若建議不準，可手動修正：", options=logo_options, index=default_idx)
+            # 畫面排版：左邊放案例文字，右邊放對應的搜尋選單
+            c_case_lbl, c_logo_sel = st.columns([3, 2])
             
-        with col_logo_2:
-            st.markdown("**🚀 執行最終打包**")
-            st.write("") # 留白對齊
-            if final_logo != "請選擇確切客戶 Logo":
-                if st.button("🔥 開始打包下載所有素材", use_container_width=True):
-                    # 撈取對應 Logo 的網址
-                    logo_row = logo_df[logo_df['client_name'] == final_logo]
-                    raw_url = logo_row.iloc[0]['logo_link'] if not logo_row.empty else ""
-                    dl_logo_url = get_image_download_url(raw_url)
-                    
-                    st.success(f"🎉 成功配對！即將下載「{final_logo}」的 Logo： {dl_logo_url}")
-                    st.info(f"正在打包您勾選的 {len(st.session_state.selected_uids)} 個 OneDrive 案例檔案...")
-            else:
-                st.warning("請先指派一個正確的 Logo 品牌。")
+            with c_case_lbl:
+                st.markdown(f"**案例 {idx+1}**")
+                st.info(f"📄 {case_title}")
                 
-        if st.button("🔙 返回重新挑選案例", use_container_width=True):
-            st.session_state.confirmed_stage = False
-            st.rerun()
-            
+            with c_logo_sel:
+                st.markdown(f"**對應 Logo {idx+1}**")
+                # 計算預設選取的索引值
+                default_idx = logo_options.index(guessed_logo_for_this_row) if guessed_logo_for_this_row in logo_options else 0
+                
+                # 同仁可以在這裡直接輸入關鍵字搜尋幾百個 Logo 
+                chosen_logo_for_row = st.selectbox(
+                    f"搜尋/挑選 Logo",
+                    options=logo_options,
+                    index=default_idx,
+                    key=f"sel_logo_pair_{picked_uid}",
+                    label_visibility="collapsed"
+                )
+                
+                # 檢查同仁有沒有確實指派
+                if chosen_logo_for_row == "請選擇確切客戶 Logo":
+                    all_logos_assigned = False
+                else:
+                    # 撈出該 Logo 的真實雲端直連網址並記錄起來
+                    logo_row = logo_df[logo_df['client_name'] == chosen_logo_for_row]
+                    raw_url = logo_row.iloc[0]['logo_link'] if not logo_row.empty else ""
+                    final_pack_pairs[picked_uid] = {
+                        'case_title': case_title,
+                        'case_onedrive_link': case_row['link'],
+                        'logo_name': chosen_logo_for_row,
+                        'logo_download_url': get_image_download_url(raw_url)
+                    }
+            st.markdown("<div style='margin-bottom:-10px;'></div>", unsafe_allow_html=True) # 微調縮小間距
+
+        st.markdown("---")
+        
+        # -----------------------------------------------------------------
+        # 執行打包下載控制區
+        # -----------------------------------------------------------------
+        c_back, c_action = st.columns([1, 4])
+        with c_back:
+            if st.button("🔙 重挑案例", use_container_width=True):
+                st.session_state.confirmed_stage = False
+                st.rerun()
+        with c_action:
+            if all_logos_assigned:
+                if st.button("🔥 確認無誤，開始打包下載這 4 個案例與 Logo 組合", use_container_width=True, type="primary"):
+                    st.success("🎉 完美配對！系統已成功將 4 組『案例網址 ➡️ Logo下載點』綁定完畢。")
+                    
+                    # 這裡你可以在後台盡情撈取你需要的資料了！
+                    for uid, info in final_pack_pairs.items():
+                        st.write(f"串接偵測：【{info['case_title']}】 🚀 成功對齊了 Logo【{info['logo_name']}】")
+                    
+                    st.info("正在同時向 OneDrive 與 Google Drive 請求檔案並為您進行背景打包下載...")
+            else:
+                st.warning("⚠️ 提示：上方尚有案例未成功指派 Logo，請先手動搜尋選取，即可解鎖打包按鈕。")
+                
         st.markdown("---")
 
     # -----------------------------------------------------------------
