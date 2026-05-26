@@ -4,6 +4,8 @@ import streamlit.components.v1 as components
 import requests
 import base64
 import hashlib
+import os
+import tempfile
 
 # === 1. 設定區 ===
 # ⚠️ 請確保這兩個網址分別是「總資料庫」分頁與「Clients」分頁獨立發布為 CSV 的網址
@@ -133,7 +135,6 @@ def main():
         st.error("目前無法連線至總資料庫，請檢查發布設定。")
         return
 
-    # 客戶端參數試聽判定
     params = st.query_params
     target_uid = params.get("id", None)
 
@@ -153,7 +154,6 @@ def main():
             if st.button("🏠 回到首頁"): st.query_params.clear(); st.rerun()
             return
 
-    # 登入密碼鎖
     if not st.session_state.logged_in:
         st.markdown("<h2 style='text-align: center;'>🔒 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
         with st.form("login_form"):
@@ -163,12 +163,9 @@ def main():
                 else: st.error("密碼錯誤")
         return
 
-    # -----------------------------------------------------------------
-    # 【第一階段】頂部案例勾選狀態進度條
-    # -----------------------------------------------------------------
     st.markdown("<h2 style='text-align: center;'>📂 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
-    
     st.markdown("---")
+    
     c_status, c_ok = st.columns([4, 1])
     with c_status:
         st.markdown(f"### 📥 已挑選案例進度： **{len(st.session_state.selected_uids)} / 6**")
@@ -183,9 +180,6 @@ def main():
             else:
                 st.warning("請先在下方案例旁勾選！")
 
-    # -----------------------------------------------------------------
-    # 【第二階段】跳出 Logo 與自訂大標編輯區 (完全收攏，檔尾絕無重複)
-    # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
         <div style="background-color:#e0f2fe; padding:20px; border-radius:10px; border-left:5px solid #0284c7; margin: 15px 0;">
@@ -242,7 +236,6 @@ def main():
 
         st.markdown("---")
         
-        # 🚀 實體下載控制列
         c_back, c_action = st.columns([1, 4])
         with c_back:
             if st.button("🔙 重挑案例", use_container_width=True, key="unique_back_btn"):
@@ -258,21 +251,21 @@ def main():
                 
                 ppt_buffer = io.BytesIO()
                 
-                with st.spinner("🚀 正在抓取實體音檔與 Logo，並自動排版六宮格簡報中..."):
+                with st.spinner("🚀 正在下載音檔與 Logo，並自動排版六宮格簡報中..."):
                     try:
                         prs = Presentation()
                         prs.slide_width = Inches(13.333)
                         prs.slide_height = Inches(7.5)
                         slide = prs.slides.add_slide(prs.slide_layouts[6])
                         
-                        # 標題
+                        # 簡報大標題
                         title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(0.8))
                         title_box.text_frame.paragraphs[0].text = str(custom_ppt_title).strip()
                         title_box.text_frame.paragraphs[0].font.size = Pt(28)
                         title_box.text_frame.paragraphs[0].font.bold = True
                         title_box.text_frame.paragraphs[0].font.name = "Microsoft JhengHei"
                         
-                        # 六宮格坐標
+                        # 精準配對六宮格坐標 (避免物件交疊)
                         x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
                         y_coords = [Inches(1.8), Inches(4.6)]
                         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -282,39 +275,52 @@ def main():
                             row_idx, col_idx = idx // 3, idx % 3   
                             current_x, current_y = x_coords[col_idx], y_coords[row_idx]
                             
-                            # 1. 繪製案例文字框
-                            text_box = slide.shapes.add_textbox(current_x, current_y, Inches(3.8), Inches(0.6))
+                            # 1. 案例標題文字框 (高度設小，避免擋到下方的喇叭)
+                            text_box = slide.shapes.add_textbox(current_x, current_y, Inches(3.8), Inches(0.5))
+                            text_box.text_frame.word_wrap = True
                             p_case = text_box.text_frame.paragraphs[0]
                             p_case.text = f"🔹 {info['case_title']}"
                             p_case.font.size = Pt(11)
                             p_case.font.name = "Microsoft JhengHei"
                             
-                            # 2. 終極魔法：下載微軟實體音檔並【嵌入】PPT 內做成播放小喇叭
+                            # 2. 終極修正：建立帶有實體副檔名的臨時音檔，確保轉碼器 100% 相容
                             if info['case_audio_link']:
                                 try:
                                     audio_url = info['case_audio_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_audio_link'] else info['case_audio_link']
-                                    resp_audio = requests.get(audio_url, headers=headers, timeout=12)
+                                    resp_audio = requests.get(audio_url, headers=headers, timeout=15)
                                     if resp_audio.status_code == 200:
-                                        audio_stream = io.BytesIO(resp_audio.content)
-                                        # 在文字右側新增一個可以點擊播放的實體音軌喇叭
+                                        # 建立帶有實體副檔名 .mp3 的臨時檔案，強迫 PowerPoint 的編碼器識別
+                                        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_audio:
+                                            tmp_audio.write(resp_audio.content)
+                                            tmp_audio_path = tmp_audio.name
+                                        
+                                        # 將喇叭圖示放置在文字框正下方 (Y + 0.75)
                                         slide.shapes.add_movie(
-                                            audio_stream,
-                                            current_x + Inches(3.2),
-                                            current_y + Inches(0.05),
+                                            tmp_audio_path,
+                                            current_x + Inches(0.2),
+                                            current_y + Inches(0.75),
                                             width=Inches(0.4),
                                             height=Inches(0.4),
                                             poster_frame_image=None,
                                             mime_type='audio/mpeg'
                                         )
+                                        # 下載完成後將暫存檔清除乾淨
+                                        try: os.unlink(tmp_audio_path)
+                                        except: pass
                                 except: pass
                             
-                            # 3. 嵌入 Logo 圖片
+                            # 3. 嵌入去背品牌 Logo 圖片 (往右橫移，不與左側的小喇叭撞車)
                             if info.get('logo_file_id'):
                                 try:
                                     direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
                                     resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
                                     if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
-                                        slide.shapes.add_picture(io.BytesIO(resp_logo.content), current_x + Inches(0.2), current_y + Inches(0.8), width=Inches(1.6))
+                                        slide.shapes.add_picture(
+                                            io.BytesIO(resp_logo.content), 
+                                            current_x + Inches(0.9), # X 坐標往右調，避開小喇叭
+                                            current_y + Inches(0.65), # Y 坐標適中浮動
+                                            width=Inches(1.6)
+                                        )
                                 except: pass
                                     
                         prs.save(ppt_buffer)
@@ -335,9 +341,6 @@ def main():
                 st.warning("⚠️ 提示：上方尚有案例未成功指派 Logo，請先手動搜尋選取。")
         st.markdown("---")
 
-    # -----------------------------------------------------------------
-    # 【第一階段】搜尋與原始列表渲染 (僅在未確認狀態下顯示)
-    # -----------------------------------------------------------------
     if not st.session_state.confirmed_stage:
         search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
         if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
