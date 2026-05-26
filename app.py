@@ -233,7 +233,8 @@ def main():
         if not logo_df.empty:
             for client in logo_df['client_name'].unique():
                 pure_name = str(client).split('_')[-1] if '_' in str(client) else str(client)
-                if pure_name in first_case_title or str(client) in first_picked_title:
+                # 🛠️ 這裡已修正變數名稱不一致的問題
+                if pure_name in first_picked_title or str(client) in first_picked_title:
                     guessed_logo = client
                     break
 
