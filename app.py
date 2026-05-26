@@ -380,11 +380,45 @@ def main():
                 st.warning("⚠️ 您的挑選清單目前為空，請點選左下角返回重新挑選案例。")
         st.markdown("---")
 
-    # -----------------------------------------------------------------
-    # 【第一階段】搜尋與原始列表渲染 (僅在未確認狀態下顯示)
+# -----------------------------------------------------------------
+    # 【第一階段】常駐戰情管理台 + 搜尋列表 (支援隨選隨聽)
     # -----------------------------------------------------------------
     if not st.session_state.confirmed_stage:
+        
+        # 💡 1. 這裡就是常駐的戰情室：只要有選東西，就會出現在搜尋框上方
+        if st.session_state.selected_uids:
+            st.markdown("### 📊 戰情管理台 (已挑選項目，可在此直接試聽確認)")
+            for uid in st.session_state.selected_uids:
+                matched_rows = df[df['uid'] == uid]
+                if matched_rows.empty: continue
+                case_info = matched_rows.iloc[0]
+                
+                # 橫向排版：名稱、播放器、刪除鈕
+                col_name, col_audio, col_del = st.columns([5, 4, 1])
+                with col_name:
+                    st.caption(f"📄 {case_info['short']}")
+                with col_audio:
+                    # 實現在重新挑選時，依然可以在上方直接試聽
+                    b64 = get_audio_base64(case_info['link'])
+                    if b64:
+                        st.markdown(f'<audio controls style="width:100%; height:32px;"><source src="{b64}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
+                with col_del:
+                    if st.button("❌", key=f"quick_del_{uid}", use_container_width=True):
+                        st.session_state.selected_uids.remove(uid)
+                        st.rerun()
+            st.markdown("---")
+
+        # 💡 2. 這裡放原本的關鍵字搜尋框
         search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
+        
+        # 💡 3. 更新按鈕名稱與位置：讓它跟在搜尋框下面，更方便點擊
+        if st.button("👌 確認挑選項目", use_container_width=True, type="primary" if st.session_state.selected_uids else "secondary"):
+            if st.session_state.selected_uids:
+                st.session_state.confirmed_stage = True
+                st.rerun()
+            else:
+                st.warning("請先在下方案例旁勾選！")
+
         if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
             st.session_state.display_count = 20
             st.session_state.last_search = search_query
