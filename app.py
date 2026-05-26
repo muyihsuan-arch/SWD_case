@@ -214,7 +214,7 @@ def main():
 
         st.markdown("---")
         
-        search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
+        search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)", id="search")
         if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
             st.session_state.display_count = 20
             st.session_state.last_search = search_query
