@@ -124,7 +124,6 @@ def show_share_dialog(display_name, link, uid, is_video=False, is_image=False):
 def main():
     st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
     
-    # 直接注入全域網頁樣式，一勞永逸強制把輸入框右下角的 "Press Enter to apply" 英文徹底隱藏！
     st.markdown("""
         <style>
         .stTextInput div[data-testid="stWidgetInstructions"] {
@@ -184,7 +183,6 @@ def main():
         st.markdown("<h2 style='text-align: center;'>📂 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
         st.markdown("---")
         
-        # 常駐戰情管理台：只要同仁有選案例，就會牢牢釘選在最頂部
         if st.session_state.selected_uids:
             st.markdown("### 📊 戰情管理台 (已挑選項目)")
             for idx, uid in enumerate(st.session_state.selected_uids):
@@ -192,7 +190,6 @@ def main():
                 if matched_rows.empty: continue
                 case_info = matched_rows.iloc[0]
                 
-                # 橫向輕量化手機優化排版
                 col_name, col_audio, col_del = st.columns([5, 4, 1])
                 with col_name:
                     st.caption(f"**項目 {idx+1}**")
@@ -215,7 +212,6 @@ def main():
                         st.rerun()
             st.markdown("---")
 
-        # 進度條與確認按鈕 (💡 這裡徹底把舊的幽靈按鈕根除了，全站只剩這一個唯一的正名按鈕！)
         c_status, c_ok = st.columns([3, 2])
         with c_status:
             st.markdown(f"📥 已挑選進度： **{len(st.session_state.selected_uids)} / 6**")
@@ -228,7 +224,6 @@ def main():
 
         st.markdown("---")
         
-        # 關鍵字搜尋輸入框
         search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
         if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
             st.session_state.display_count = 20
@@ -299,7 +294,7 @@ def main():
                 st.rerun()
 
     # -----------------------------------------------------------------
-    # 【第二階段】配置與最終 PPTX 封裝生成頁面 (全套件就位無 Bug 版)
+    # 【第二階段】配置與最終 PPTX 封裝生成頁面
     # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
@@ -400,7 +395,7 @@ def main():
                             y_coords = [Inches(2.0), Inches(4.7)]
                             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
                             
-                            # 預先下載去背小喇叭圖標
+                            # 預先下載純音訊專用去背小喇叭圖標
                             resp_icon = requests.get(DEFAULT_SPEAKER_ICON_URL, headers=headers, timeout=5)
                             icon_bytes = resp_icon.content if resp_icon.status_code == 200 else None
                             
@@ -432,19 +427,20 @@ def main():
                                                 tmp_media.write(resp_media.content)
                                                 tmp_media_path = tmp_media.name
                                             
+                                            # 💡 終極優化修正核心：將影音下載分成完全獨立的兩套建構方式
                                             if is_mp4:
-                                                # 📺 實體影片播放預覽框
+                                                # 📺 實體影片：在投影片內生成一個精緻的小播放框 (poster_frame_image 設定為 None，徹底拒絕小喇叭！)
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
                                                     current_x + Inches(0.2),
                                                     current_y + Inches(0.65),
                                                     width=Inches(1.4),
                                                     height=Inches(1.0),
-                                                    poster_frame_image=None,
+                                                    poster_frame_image=None,  # 👈 拒絕小喇叭圖標，保留原始實體影片框
                                                     mime_type=mime_str
                                                 )
                                             else:
-                                                # 🎵 實體音訊：綁定高質感去背小喇叭外觀圖片
+                                                # 🎵 實體音訊：純音軌才綁定精美小喇叭外觀
                                                 poster_stream = io.BytesIO(icon_bytes) if icon_bytes else None
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
@@ -478,7 +474,7 @@ def main():
                                         
                             prs.save(ppt_buffer)
                             ppt_buffer.seek(0)
-                            today_str = datetime.now().strftime("%Y%m%d") # 👈 這裡能完美抓到最上方的 datetime 全域變數了！
+                            today_str = datetime.now().strftime("%Y%m%d")
                             
                             st.download_button(
                                 label="💾 簡報封裝完畢！點此儲存 PPTX 檔案至電腦",
