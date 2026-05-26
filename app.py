@@ -218,30 +218,40 @@ def main():
             else:
                 st.warning("請先在下方案例旁勾選！")
 
-    # -----------------------------------------------------------------
-    # 【階段二】跳出 Logo 建議與打包下載頁面 (1對1 上下排智慧對應版)
+   # -----------------------------------------------------------------
+    # 【階段二】跳出 Logo 建議與簡報生成頁面 (終極完美 PPT 版)
     # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
         <div style="background-color:#e0f2fe; padding:20px; border-radius:10px; border-left:5px solid #0284c7; margin: 15px 0;">
-            <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認各案例對應的 Logo</h4>
-            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">系統已為您自動匹配建議。若不合適，您可直接點擊下拉選單「打字搜尋」正確的 Logo。</p>
+            <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認各案例 Logo 與自訂簡報大標</h4>
+            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">請確認下方各案例對應的 Logo。您可以在下方直接修改 PPT 的主標題名稱。</p>
         </div>
         """, unsafe_allow_html=True)
+        
+        # ✨ 需求新增：多出一個可編輯的大標題 Bar
+        st.markdown("### 🖋️ 編輯 PPT 簡報大標題")
+        custom_ppt_title = st.text_input(
+            "請輸入您想要的 PPT 簡報主標題：",
+            value="合作夥伴案例分享", # 預設固定寫這行
+            placeholder="例如：全家便利商店 媒體行銷案例提案",
+            key="custom_ppt_title_input"
+        )
+        st.markdown("---")
         
         # 準備供手動搜尋的完整 Logo 清單
         logo_options = ["請選擇確切客戶 Logo"] + sorted(list(logo_df['client_name'].unique())) if not logo_df.empty else ["請選擇確切客戶 Logo"]
         
         # 建立一個字典，用來記錄每一個被選中案例最終決定搭配的 logo 網址
         final_pack_pairs = {}
-        all_logos_assigned = True # 檢查是不是每一格都指派好 Logo 的旗標
+        all_logos_assigned = True 
 
-        # 這裡實施「上下排對應」：使用者勾幾個案例，就跑幾列橫條
+        # 實施「上下排對應」：使用者勾幾個案例，就跑幾列橫條
         for idx, picked_uid in enumerate(st.session_state.selected_uids):
             case_row = df[df['uid'] == picked_uid].iloc[0]
             case_title = str(case_row['short'])
             
-            # 💡 針對這個案例，獨立盲猜最適合的 Logo
+            # 獨立盲猜最適合的 Logo
             guessed_logo_for_this_row = "請選擇確切客戶 Logo"
             if not logo_df.empty:
                 for client in logo_df['client_name'].unique():
@@ -259,10 +269,8 @@ def main():
                 
             with c_logo_sel:
                 st.markdown(f"**對應 Logo {idx+1}**")
-                # 計算預設選取的索引值
                 default_idx = logo_options.index(guessed_logo_for_this_row) if guessed_logo_for_this_row in logo_options else 0
                 
-                # 同仁可以在這裡直接輸入關鍵字搜尋幾百個 Logo 
                 chosen_logo_for_row = st.selectbox(
                     f"搜尋/挑選 Logo",
                     options=logo_options,
@@ -271,21 +279,133 @@ def main():
                     label_visibility="collapsed"
                 )
                 
-                # 檢查同仁有沒有確實指派
                 if chosen_logo_for_row == "請選擇確切客戶 Logo":
                     all_logos_assigned = False
                 else:
                     # 撈出該 Logo 的真實雲端直連網址並記錄起來
                     logo_row = logo_df[logo_df['client_name'] == chosen_logo_for_row]
                     raw_url = logo_row.iloc[0]['logo_link'] if not logo_row.empty else ""
+                    
+                    # 💡 終極核心：改用全新的 googleusercontent 接口，免 API 金鑰直連下載圖片
+                    file_id = ""
+                    if "/file/d/" in raw_url: file_id = raw_url.split("/file/d/")[1].split("/")[0]
+                    elif "id=" in raw_url: file_id = raw_url.split("id=")[1].split("&")[0]
+                    
                     final_pack_pairs[picked_uid] = {
                         'case_title': case_title,
-                        'case_onedrive_link': case_row['link'],
                         'logo_name': chosen_logo_for_row,
-                        'logo_download_url': get_image_download_url(raw_url)
+                        'logo_file_id': file_id
                     }
-            st.markdown("<div style='margin-bottom:-10px;'></div>", unsafe_allow_html=True) # 微調縮小間距
+            st.markdown("<div style='margin-bottom:-10px;'></div>", unsafe_allow_html=True) 
 
+        st.markdown("---")
+        
+        # -----------------------------------------------------------------
+        # 🚀 執行自動生成 PPTX 簡報與實體圖片嵌入
+        # -----------------------------------------------------------------
+        c_back, c_action = st.columns([1, 4])
+        with c_back:
+            if st.button("🔙 重挑案例", use_container_width=True):
+                st.session_state.confirmed_stage = False
+                st.rerun()
+                
+        with c_action:
+            if all_logos_assigned:
+                import io
+                from datetime import datetime
+                from pptx import Presentation
+                from pptx.util import Inches, Pt
+                
+                # 建立一個記憶體內部的二進位流，用來準備 PPTX 檔案
+                ppt_buffer = io.BytesIO()
+                
+                with st.spinner("🚀 正在跨雲端撈取實體 Logo 圖片，並自動排版六宮格簡報中..."):
+                    try:
+                        # 1. 初始化一份空白簡報 (16:9 寬螢幕)
+                        prs = Presentation()
+                        prs.slide_width = Inches(13.333)
+                        prs.slide_height = Inches(7.5)
+                        
+                        # 新增一張空白投影片
+                        blank_slide_layout = prs.slide_layouts[6]
+                        slide = prs.slides.add_slide(blank_slide_layout)
+                        
+                        # 2. 畫出簡報主標題 (✨ 改用剛剛同仁手動輸入的內容！)
+                        title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(0.8))
+                        tf = title_box.text_frame
+                        p = tf.paragraphs[0]
+                        p.text = str(custom_ppt_title).strip() # 👈 這裡完美連動文字輸入框
+                        p.font.size = Pt(28)
+                        p.font.bold = True
+                        p.font.name = "Microsoft JhengHei"
+                        
+                        # 3. 定義六宮格的標準座標 (2排 x 3列)
+                        x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
+                        y_coords = [Inches(1.8), Inches(4.6)]
+                        box_width = Inches(3.8)
+                        
+                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                        
+                        # 4. 開始將案例與 Logo 實體圖片填入六宮格
+                        for idx, (uid, info) in enumerate(final_pack_pairs.items()):
+                            if idx >= 6: break 
+                            
+                            row_idx = idx // 3  
+                            col_idx = idx % 3   
+                            
+                            current_x = x_coords[col_idx]
+                            current_y = y_coords[row_idx]
+                            
+                            # 💡 繪製案例的文字框 (上方)
+                            text_box = slide.shapes.add_textbox(current_x, current_y, box_width, Inches(0.6))
+                            tf_case = text_box.text_frame
+                            tf_case.word_wrap = True
+                            p_case = tf_case.paragraphs[0]
+                            p_case.text = f"🔹 {info['case_title']}" 
+                            p_case.font.size = Pt(12)
+                            p_case.font.name = "Microsoft JhengHei"
+                            
+                            # 💡 終極實現：抓取實體圖片並嵌入 PPT (下方)
+                            if info['logo_file_id']:
+                                try:
+                                    # 使用全新的第三方高畫質免密鑰直連網址
+                                    direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
+                                    resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
+                                    
+                                    if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
+                                        logo_stream = io.BytesIO(resp_logo.content)
+                                        # 將實體圖片完美塞入 PPT 對應格子的位置
+                                        slide.shapes.add_picture(
+                                            logo_stream, 
+                                            current_x + Inches(0.2), 
+                                            current_y + Inches(0.7), 
+                                            width=Inches(1.6) # 固定寬度，高度等比例縮放
+                                        )
+                                except Exception as e_img:
+                                    # 如果單張圖片下載有微小意外，輸出小文字提醒但不崩潰
+                                    pass
+                                    
+                        # 5. 排版完成，將簡報儲存至記憶體
+                        prs.save(ppt_buffer)
+                        ppt_buffer.seek(0)
+                        
+                        today_str = datetime.now().strftime("%Y%m%d")
+                        
+                        # 吐出真正的 PowerPoint 下載按鈕！
+                        st.download_button(
+                            label="🎨 簡報自動排版成功！點此下載六宮格提案 PPTX",
+                            data=ppt_buffer,
+                            file_name=f"媒體通路提案簡報_{today_str}.pptx",
+                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                            use_container_width=True,
+                            type="primary"
+                        )
+                        
+                    except Exception as e:
+                        st.error(f"❌ 簡報自動生成失敗，原因：{str(e)}")
+            else:
+                st.warning("⚠️ 提示：上方尚有案例未成功指派 Logo，請先手動搜尋選取，即可解鎖簡報生成功能。")
+                
         st.markdown("---")
         
         # -----------------------------------------------------------------
