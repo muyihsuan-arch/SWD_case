@@ -286,25 +286,114 @@ def main():
         st.markdown("---")
         
         # -----------------------------------------------------------------
-        # 執行打包下載控制區
+        # 🚀 終極實現：真正的自動生成 PPTX 簡報並下載
         # -----------------------------------------------------------------
         c_back, c_action = st.columns([1, 4])
         with c_back:
             if st.button("🔙 重挑案例", use_container_width=True):
                 st.session_state.confirmed_stage = False
                 st.rerun()
+                
         with c_action:
             if all_logos_assigned:
-                if st.button("🔥 確認無誤，開始打包下載這 4 個案例與 Logo 組合", use_container_width=True, type="primary"):
-                    st.success("🎉 完美配對！系統已成功將 4 組『案例網址 ➡️ Logo下載點』綁定完畢。")
-                    
-                    # 這裡你可以在後台盡情撈取你需要的資料了！
-                    for uid, info in final_pack_pairs.items():
-                        st.write(f"串接偵測：【{info['case_title']}】 🚀 成功對齊了 Logo【{info['logo_name']}】")
-                    
-                    st.info("正在同時向 OneDrive 與 Google Drive 請求檔案並為您進行背景打包下載...")
+                import io
+                from datetime import datetime
+                from pptx import Presentation
+                from pptx.util import Inches, Pt
+                from pptx.dml.color import RGBColor
+                
+                # 建立一個記憶體內部的二進位流，用來準備 PPTX 檔案
+                ppt_buffer = io.BytesIO()
+                
+                with st.spinner("🚀 正在為您跨雲端抓取素材，並自動排版六宮格簡報中..."):
+                    try:
+                        # 1. 初始化一份空白簡報 (預設是 16:9 寬螢幕)
+                        prs = Presentation()
+                        prs.slide_width = Inches(13.333)
+                        prs.slide_height = Inches(7.5)
+                        
+                        # 新增一張空白投影片
+                        blank_slide_layout = prs.slide_layouts[6]
+                        slide = prs.slides.add_slide(blank_slide_layout)
+                        
+                        # 2. 畫出簡報主標題 (例如：統一_茶裏王 媒體行銷案例)
+                        title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12), Inches(0.8))
+                        tf = title_box.text_frame
+                        p = tf.paragraphs[0]
+                        p.text = f"📊 媒體通路行銷案例提案 — 【{st.session_state.global_selected_logo_client}】"
+                        p.font.size = Pt(28)
+                        p.font.bold = True
+                        p.font.name = "Microsoft JhengHei" # 微軟正黑體
+                        
+                        # 3. 定義六宮格的標準座標 (2排 x 3列)
+                        # 欄位 X 座標: 左、中、右
+                        x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
+                        # 列位 Y 座標: 上、下
+                        y_coords = [Inches(1.5), Inches(4.5)]
+                        
+                        # 寬度與高度固定
+                        box_width = Inches(3.8)
+                        box_height = Inches(2.5)
+                        
+                        headers = {'User-Agent': 'Mozilla/5.0'}
+                        
+                        # 4. 開始將同仁勾選的案例依序填入六宮格
+                        for idx, (uid, info) in enumerate(final_pack_pairs.items()):
+                            if idx >= 6: break # 最多填滿六格
+                            
+                            # 計算目前這格要落在第幾列、第幾欄
+                            row_idx = idx // 3  # 0 或 1
+                            col_idx = idx % 3   # 0, 1, 2
+                            
+                            current_x = x_coords[col_idx]
+                            current_y = y_coords[row_idx]
+                            
+                            # 💡 繪製案例的文字框 (上方)
+                            text_box = slide.shapes.add_textbox(current_x, current_y, box_width, Inches(0.6))
+                            tf_case = text_box.text_frame
+                            tf_case.word_wrap = True
+                            p_case = tf_case.paragraphs[0]
+                            # 簡化名稱，只拿短標題
+                            p_case.text = f"🔹 {info['case_title'][:20]}..." 
+                            p_case.font.size = Pt(12)
+                            p_case.font.name = "Microsoft JhengHei"
+                            
+                            # 💡 抓取並插入對應的客戶 Logo 圖片 (放文字下方)
+                            if info['logo_download_url']:
+                                resp_logo = requests.get(info['logo_download_url'], headers=headers, timeout=10)
+                                if resp_logo.status_code == 200:
+                                    logo_stream = io.BytesIO(resp_logo.content)
+                                    # 將 Logo 精準貼在特定格子的座標上，並微調大小
+                                    slide.shapes.add_picture(
+                                        logo_stream, 
+                                        current_x + Inches(0.2), 
+                                        current_y + Inches(0.7), 
+                                        width=Inches(1.5) # 寬度固定 1.5 吋，高度會依比例縮放
+                                    )
+                                    
+                            # 💡 如果這筆案例本身是圖片檔，也可以把案例圖片抓下來並排貼上
+                            # (此處預留空間，目前先幫您把 Logo 與文字框架對應排好)
+                                    
+                        # 5. 排版完成，將簡報儲存至記憶體
+                        prs.save(ppt_buffer)
+                        ppt_buffer.seek(0)
+                        
+                        today_str = datetime.now().strftime("%Y%m%d")
+                        
+                        # 💡 吐出真正的 PowerPoint 下載按鈕！
+                        st.download_button(
+                            label="🎨 簡報自動排版成功！點此下載六宮格提案 PPTX",
+                            data=ppt_buffer,
+                            file_name=f"通路媒體提案簡報_{st.session_state.global_selected_logo_client}_{today_str}.pptx",
+                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                            use_container_width=True,
+                            type="primary"
+                        )
+                        
+                    except Exception as e:
+                        st.error(f"❌ 簡報自動生成失敗，原因：{str(e)}")
             else:
-                st.warning("⚠️ 提示：上方尚有案例未成功指派 Logo，請先手動搜尋選取，即可解鎖打包按鈕。")
+                st.warning("⚠️ 提示：上方尚有案例未成功指派 Logo，請先手動搜尋選取，即可解鎖簡報生成功能。")
                 
         st.markdown("---")
 
