@@ -36,11 +36,14 @@ def get_embed_url(link):
     return link
 
 def get_image_download_url(link):
-    """自動將 Google Drive 預覽網址轉為直連下載網址，解決破圖問題"""
+    """💡 終極修正版：直接提取 Google Drive File ID，改走官方 API 媒體流"""
     if not isinstance(link, str): return ""
-    if "drive.google.com" in link and "/file/d/" in link:
-        file_id = link.split("/file/d/")[1].split("/")[0]
-        return f"https://drive.google.com/uc?export=download&id={file_id}"
+    if "drive.google.com" in link:
+        # 容錯解析：不論是 /file/d/ 還是 id= 都能抓到 33 位的 File ID
+        if "/file/d/" in link:
+            return link.split("/file/d/")[1].split("/")[0]
+        elif "id=" in link:
+            return link.split("id=")[1].split("&")[0]
     return link
 
 # === 3. 資料載入與過濾核心 ===
@@ -364,18 +367,25 @@ def main():
                             p_case.font.size = Pt(12)
                             p_case.font.name = "Microsoft JhengHei"
                             
-                            # 💡 抓取並插入對應的客戶 Logo 圖片 (放文字下方)
+                        # 💡 抓取並插入對應的客戶 Logo 圖片 (安全防爆版)
                             if info['logo_download_url']:
-                                resp_logo = requests.get(info['logo_download_url'], headers=headers, timeout=10)
-                                if resp_logo.status_code == 200:
-                                    logo_stream = io.BytesIO(resp_logo.content)
-                                    # 將 Logo 精準貼在特定格子的座標上，並微調大小
-                                    slide.shapes.add_picture(
-                                        logo_stream, 
-                                        current_x + Inches(0.2), 
-                                        current_y + Inches(0.7), 
-                                        width=Inches(1.5) # 寬度固定 1.5 吋，高度會依比例縮放
-                                    )
+                                try:
+                                    file_id = info['logo_download_url']
+                                    # 👈 核心關鍵：直接用官方 API 接口，繞過所有網頁版防毒警告陷阱
+                                    api_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+                                    
+                                    resp_logo = requests.get(api_url, headers=headers, timeout=10)
+                                    if resp_logo.status_code == 200:
+                                        logo_stream = io.BytesIO(resp_logo.content)
+                                        # 嘗試塞入簡報
+                                        slide.shapes.add_picture(
+                                            logo_stream, 
+                                            current_x + Inches(0.2), 
+                                            current_y + Inches(0.7), 
+                                            width=Inches(1.5)
+                                        )
+                                except Exception as img_error:
+                                    pass
                                     
                             # 💡 如果這筆案例本身是圖片檔，也可以把案例圖片抓下來並排貼上
                             # (此處預留空間，目前先幫您把 Logo 與文字框架對應排好)
