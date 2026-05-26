@@ -7,6 +7,7 @@ import base64
 import hashlib
 import os
 import tempfile
+from datetime import datetime
 
 # === 1. 設定區 ===
 # ⚠️ 請確保這兩個網址分別是「總資料庫」分頁與「Clients」分頁獨立發布為 CSV 的網址
@@ -214,7 +215,7 @@ def main():
                         st.rerun()
             st.markdown("---")
 
-        # 進度條與確認按鈕 (💡 圖1修正核心：這裡已經完全移除舊的頂部重複按鈕，統一留在進度列旁，且字樣已正名為「確認挑選項目」)
+        # 進度條與確認按鈕 (💡 這裡徹底把舊的幽靈按鈕根除了，全站只剩這一個唯一的正名按鈕！)
         c_status, c_ok = st.columns([3, 2])
         with c_status:
             st.markdown(f"📥 已挑選進度： **{len(st.session_state.selected_uids)} / 6**")
@@ -298,7 +299,7 @@ def main():
                 st.rerun()
 
     # -----------------------------------------------------------------
-    # 【第二階段】配置與最終 PPTX 封裝生成頁面 (影音雙軌實體內嵌版)
+    # 【第二階段】配置與最終 PPTX 封裝生成頁面 (全套件就位無 Bug 版)
     # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
@@ -399,7 +400,7 @@ def main():
                             y_coords = [Inches(2.0), Inches(4.7)]
                             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
                             
-                            # 預先下載指定的高質感去背小喇叭圖標
+                            # 預先下載去背小喇叭圖標
                             resp_icon = requests.get(DEFAULT_SPEAKER_ICON_URL, headers=headers, timeout=5)
                             icon_bytes = resp_icon.content if resp_icon.status_code == 200 else None
                             
@@ -477,7 +478,7 @@ def main():
                                         
                             prs.save(ppt_buffer)
                             ppt_buffer.seek(0)
-                            today_str = datetime.now().strftime("%Y%m%d")
+                            today_str = datetime.now().strftime("%Y%m%d") # 👈 這裡能完美抓到最上方的 datetime 全域變數了！
                             
                             st.download_button(
                                 label="💾 簡報封裝完畢！點此儲存 PPTX 檔案至電腦",
