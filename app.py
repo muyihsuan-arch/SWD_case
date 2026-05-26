@@ -82,6 +82,44 @@ def load_logo_data():
     except:
         return pd.DataFrame(columns=['category', 'client_name', 'logo_link'])
 
+# === 4. UI 元件 (複製功能核心) ===
+def render_copy_ui(label, text_to_copy, is_disabled=False, warning_msg=""):
+    if is_disabled:
+        html_code = f"""
+        <div style="background-color:#fff5f5;padding:12px;border-radius:8px;border:1px solid #feb2b2;margin-bottom:10px;">
+            <label style="font-size:12px;color:#c53030;font-weight:bold;">{label}</label>
+            <p style="font-size:13px;color:#333;margin:8px 0;line-height:1.4;">⚠️ {warning_msg}</p>
+        </div>
+        """
+    else:
+        html_code = f"""
+        <div style="background-color:#f8f9fa;padding:10px;border-radius:8px;border:1px solid #eee;margin-bottom:10px;">
+            <label style="font-size:12px;color:#666;">{label}</label>
+            <input type="text" value="{text_to_copy}" id="copyInput" readonly style="width:100%;padding:8px;margin:5px 0;border:1px solid #ddd;border-radius:4px;">
+            <button onclick="copyToClipboard()" style="width:100%;padding:10px;background:#0097DA;color:white;border:none;border-radius:5px;cursor:pointer;font-weight:bold;">📋 點此複製網址</button>
+            <script>
+                function copyToClipboard() {{
+                    var copyText = document.getElementById("copyInput");
+                    copyText.select();
+                    navigator.clipboard.writeText(copyText.value).then(function() {{ alert("✅ 複製成功！"); }});
+                }}
+            </script>
+        </div>
+        """
+    components.html(html_code, height=150)
+
+@st.dialog("🔗 分享檔案權限")
+def show_share_dialog(display_name, link, uid, is_video=False, is_image=False):
+    st.write(f"📄 **{display_name}**")
+    render_copy_ui("🏢 內部分享連結 (同仁下載用)", link)
+    if is_video:
+        render_copy_ui("🌏 外部分享連結", "", is_disabled=True, warning_msg="影片涉及『客戶版權』及『全家便利商店場域』，不提供對外分享。")
+    elif is_image:
+        render_copy_ui("🌏 外部分享連結", "", is_disabled=True, warning_msg="此為『圖片檔』，涉及版權保護，不提供對外分享。")
+    else:
+        share_link = f"{SITE_URL}?id={uid}"
+        render_copy_ui("🌏 外部分享連結 (客戶試聽/防下載)", share_link)
+
 # === 5. 主程式架構 ===
 def main():
     st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
@@ -140,7 +178,7 @@ def main():
         return
 
     # -----------------------------------------------------------------
-    # 【第一階段】常駐戰情管理台 + 搜尋列表 (支援影片超連結化)
+    # 【第一階段】常駐戰情管理台 + 搜尋列表
     # -----------------------------------------------------------------
     if not st.session_state.confirmed_stage:
         st.markdown("<h2 style='text-align: center;'>📂 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
@@ -159,7 +197,7 @@ def main():
                     st.caption(f"**項目 {idx+1}**")
                     st.markdown(f"📄 {case_info['short']}")
                 with col_audio:
-                    # 精準判定是不是音訊
+                    # 影音雙軌精準切分比對
                     link_clean_check = str(case_info['link']).split('?')[0].lower()
                     title_clean_check = str(case_info['title']).replace(" ", "").lower()
                     type_clean_check = str(case_info['type']).replace(" ", "").lower()
@@ -177,14 +215,12 @@ def main():
                             any(k in type_clean_check for k in ['新鮮視', '側帶'])
                         )
                     
-                    # 💡 依據需求微調：音訊給予載入按鈕，影片在網頁端直接呈現「跳轉線上觀看網址」！
                     if not is_panel_video:
                         if st.button("▶️ 載入音訊", key=f"panel_play_{uid}", use_container_width=True):
                             with st.spinner("載入中..."):
                                 b64 = get_audio_base64(case_info['link'])
                                 if b64: st.audio(b64)
                     else:
-                        # ✨ 影片轉換為可點擊連結，方便手機/電腦直接跳轉試看，絕不生成錯誤喇叭
                         st.link_button("📺 線上觀看影片", case_info['link'], use_container_width=True)
                         
                 with col_del:
@@ -194,7 +230,7 @@ def main():
                         st.rerun()
             st.markdown("---")
 
-        # 💡 圖1修正核心：徹底刪除舊代碼中的幽靈按鈕判定，全站第一階段只在「這裡」產生唯一的「確認挑選項目」控制按鈕！
+        # 💡 正名按鈕唯一常駐列
         c_status, c_ok = st.columns([3, 2])
         with c_status:
             st.markdown(f"📥 已挑選進度： **{len(st.session_state.selected_uids)} / 6**")
@@ -207,7 +243,6 @@ def main():
 
         st.markdown("---")
         
-        # 關鍵字搜尋輸入框
         search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
         if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
             st.session_state.display_count = 20
@@ -267,8 +302,9 @@ def main():
                     else: components.iframe(get_embed_url(row['link']), height=400)
                     
                     bt1, bt2 = st.columns(2)
-                    with bt1: st.link_button("↗ 開啟檔案", row['link'], use_container_width=True)
+                    with bt1: st.link_button("↗ 開氣檔案", row['link'], use_container_width=True)
                     with bt2:
+                        # 💡 完美修正：將原本綁錯的變數修復，重新召喚「🔗 分享檔案」網址複製功能！
                         if st.button("🔗 分享檔案", key=f"s_{uid}", use_container_width=True):
                             show_share_dialog(display_name, row['link'], uid, is_video=is_video, is_image=is_image)
 
@@ -278,7 +314,7 @@ def main():
                 st.rerun()
 
     # -----------------------------------------------------------------
-    # 【第二階段】配置與最終 PPTX 封裝生成頁面 (維持實體內嵌)
+    # 【第二階段】配置與最終 PPTX 封裝生成頁面
     # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
@@ -396,7 +432,7 @@ def main():
                                 p_case.font.size = Pt(11)
                                 p_case.font.name = "Microsoft JhengHei"
                                 
-                                # 副檔名與欄位雙重嚴格分流
+                                # 副檔名與欄位雙重分流
                                 title_clean = info['case_title'].replace(" ", "").lower()
                                 type_clean = info['case_type'].replace(" ", "").lower()
                                 link_clean = info['case_link'].split('?')[0].lower()
@@ -428,7 +464,6 @@ def main():
                                                 tmp_media_path = tmp_media.name
                                             
                                             if is_mp4:
-                                                # 📺 簡報下載依然維持：實體影片播放預覽框
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
                                                     current_x + Inches(0.2),
@@ -439,7 +474,6 @@ def main():
                                                     mime_type=mime_str
                                                 )
                                             else:
-                                                # 🎵 簡報下載依然維持：音訊專用去背小喇叭
                                                 poster_stream = io.BytesIO(icon_bytes) if icon_bytes else None
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
