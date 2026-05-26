@@ -316,11 +316,17 @@ def main():
                         blank_slide_layout = prs.slide_layouts[6]
                         slide = prs.slides.add_slide(blank_slide_layout)
                         
-                        # 2. 畫出簡報主標題 (例如：統一_茶裏王 媒體行銷案例)
+                      # 2. 畫出簡報主標題 (智慧撈取第一個案例所指派的 Logo 名稱作為大標題)
+                        first_logo_name = "客戶品牌"
+                        if st.session_state.selected_uids:
+                            first_uid = st.session_state.selected_uids[0]
+                            if first_uid in final_pack_pairs:
+                                first_logo_name = final_pack_pairs[first_uid]['logo_name']
+
                         title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12), Inches(0.8))
                         tf = title_box.text_frame
                         p = tf.paragraphs[0]
-                        p.text = f"📊 媒體通路行銷案例提案 — 【{st.session_state.global_selected_logo_client}】"
+                        p.text = f"📊 媒體通路行銷案例提案 — 【{first_logo_name}】" # 👈 這裡已修正變數錯誤
                         p.font.size = Pt(28)
                         p.font.bold = True
                         p.font.name = "Microsoft JhengHei" # 微軟正黑體
@@ -384,7 +390,7 @@ def main():
                         st.download_button(
                             label="🎨 簡報自動排版成功！點此下載六宮格提案 PPTX",
                             data=ppt_buffer,
-                            file_name=f"通路媒體提案簡報_{st.session_state.global_selected_logo_client}_{today_str}.pptx",
+                            file_name=f"通路媒體提案簡報_{first_logo_name}_{today_str}.pptx",
                             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                             use_container_width=True,
                             type="primary"
