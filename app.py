@@ -15,6 +15,9 @@ CSV_LOGO_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnViFsUwWYASaR5
 PASSWORD = "888"
 SITE_URL = "https://swd-case.streamlit.app" 
 
+# 💡 這裡預設一張精美的去背小喇叭 PNG 圖標網址，用來當作 PPT 內音軌的顯示外觀
+DEFAULT_SPEAKER_ICON_URL = "https://img.icons8.com/color/96/speaker.png"
+
 # === 2. 核心技術函數 ===
 def generate_id(link):
     return hashlib.md5(str(link).encode()).hexdigest()[:10]
@@ -281,13 +284,13 @@ def main():
                 st.rerun()
 
     # -----------------------------------------------------------------
-    # 【第二階段】配置與最終 PPTX 封裝生成頁面 (完整支援影片與音訊雙軌嵌入)
+    # 【第二階段】配置與最終 PPTX 封裝生成頁面 (大標題置中字級36 + 自訂音訊圖標版)
     # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
         <div style="background-color:#e0f2fe; padding:20px; border-radius:10px; border-left:5px solid #0284c7; margin: 15px 0;">
             <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認各案例 Logo 與自訂簡報大標</h4>
-            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">請確認下方各案例對應的 Logo。音訊或影片檔將在下載時「實體嵌入」至簡報中。</p>
+            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">請確認下方各案例對應的 Logo。大標題將自動置中，字級為 36 級字。</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -356,35 +359,44 @@ def main():
                 from datetime import datetime
                 from pptx import Presentation
                 from pptx.util import Inches, Pt
+                from pptx.enum.text import PP_ALIGN # 💡 導入置中排版模組
                 
                 ppt_buffer = io.BytesIO()
                 
                 if st.button("🎨 確認無誤！開始排版並下載六宮格提案 PPTX", use_container_width=True, type="primary"):
-                    with st.spinner("🚀 正在下載多媒體素材與 Logo，並自動封裝六宮格簡報中..."):
+                    with st.spinner("🚀 正在下載多媒體素材並極速封裝簡報中..."):
                         try:
                             prs = Presentation()
                             prs.slide_width = Inches(13.333)
                             prs.slide_height = Inches(7.5)
                             slide = prs.slides.add_slide(prs.slide_layouts[6])
                             
-                            # 主標題
-                            title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(0.8))
-                            title_box.text_frame.paragraphs[0].text = str(custom_ppt_title).strip()
-                            title_box.text_frame.paragraphs[0].font.size = Pt(28)
-                            title_box.text_frame.paragraphs[0].font.bold = True
-                            title_box.text_frame.paragraphs[0].font.name = "Microsoft JhengHei"
+                            # 💡 1. 實現大標題：全寬置中、字級 36 級字
+                            title_box = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12.133), Inches(1.0))
+                            tf = title_box.text_frame
+                            tf.word_wrap = True
+                            p_title = tf.paragraphs[0]
+                            p_title.text = str(custom_ppt_title).strip()
+                            p_title.font.size = Pt(36) # 👈 修正為 36 級字
+                            p_title.font.bold = True
+                            p_title.font.name = "Microsoft JhengHei"
+                            p_title.alignment = PP_ALIGN.CENTER # 👈 完美實現置中
                             
                             # 六宮格標準坐標
                             x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
-                            y_coords = [Inches(1.8), Inches(4.6)]
+                            y_coords = [Inches(2.0), Inches(4.7)]
                             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                            
+                            # 預先抓取我們指定的精美小喇叭去背圖檔
+                            resp_icon = requests.get(DEFAULT_SPEAKER_ICON_URL, headers=headers, timeout=5)
+                            icon_bytes = resp_icon.content if resp_icon.status_code == 200 else None
                             
                             for idx, (uid, info) in enumerate(final_pack_pairs.items()):
                                 if idx >= 6: break 
                                 row_idx, col_idx = idx // 3, idx % 3   
                                 current_x, current_y = x_coords[col_idx], y_coords[row_idx]
                                 
-                                # 1. 繪製案例文字框
+                                # 繪製案例文字框
                                 text_box = slide.shapes.add_textbox(current_x, current_y, Inches(3.8), Inches(0.5))
                                 text_box.text_frame.word_wrap = True
                                 p_case = text_box.text_frame.paragraphs[0]
@@ -392,14 +404,13 @@ def main():
                                 p_case.font.size = Pt(11)
                                 p_case.font.name = "Microsoft JhengHei"
                                 
-                                # 2. 💡 智慧辨識多媒體類型：自動判定音訊 (.mp3) 或影片 (.mp4)
+                                # 智慧辨識影音雙軌
                                 if info['case_link']:
                                     try:
                                         media_url = info['case_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_link'] else info['case_link']
                                         resp_media = requests.get(media_url, headers=headers, timeout=20)
                                         
                                         if resp_media.status_code == 200:
-                                            # 判定是不是影片
                                             is_mp4 = any(ext in info['case_title'].lower() for ext in ['.mp4', '.mov']) or "新鮮視" in info['case_title'] or "側帶" in info['case_title']
                                             suffix_str = '.mp4' if is_mp4 else '.mp3'
                                             mime_str = 'video/mp4' if is_mp4 else 'audio/mpeg'
@@ -409,7 +420,7 @@ def main():
                                                 tmp_media_path = tmp_media.name
                                             
                                             if is_mp4:
-                                                # 📺 影片嵌入邏輯：在格子左側畫出一個小型的影片播放視窗（寬1.4吋，高1.0吋）
+                                                # 📺 影片嵌入邏輯 (影片自帶畫面，維持預覽視窗)
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
                                                     current_x + Inches(0.2),
@@ -420,29 +431,31 @@ def main():
                                                     mime_type=mime_str
                                                 )
                                             else:
-                                                # 🎵 音訊嵌入邏輯：維持小喇叭圖示
+                                                # 🎵 2. 實現自訂圖片音軌功能！
+                                                # 建立記憶體串流，將自訂的小喇叭去背圖檔當作它的 Poster Frame（封皮）
+                                                poster_stream = io.BytesIO(icon_bytes) if icon_bytes else None
+                                                
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
                                                     current_x + Inches(0.2),
-                                                    current_y + Inches(0.75),
-                                                    width=Inches(0.4),
-                                                    height=Inches(0.4),
-                                                    poster_frame_image=None,
+                                                    current_y + Inches(0.7),
+                                                    width=Inches(0.5), # 放大到 0.5 吋，更好看、好點擊
+                                                    height=Inches(0.5),
+                                                    poster_frame_image=poster_stream, # 👈 這裡成功塞入自訂外觀圖片！
                                                     mime_type=mime_str
                                                 )
                                             try: os.unlink(tmp_media_path)
                                             except: pass
                                     except: pass
                                 
-                                # 3. 嵌入去背品牌 Logo 圖片 (自動與多媒體物件錯開)
+                                # 嵌入去背品牌 Logo 圖片
                                 if info.get('logo_file_id') and info['logo_name'] != "請選擇確切客戶 Logo":
                                     try:
                                         direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
                                         resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
                                         if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
-                                            # 如果是影片，Logo稍微往右移一點 (Inches(1.8))，避免跟影片框重疊
                                             is_mp4_layout = any(ext in info['case_title'].lower() for ext in ['.mp4', '.mov']) or "新鮮視" in info['case_title'] or "側帶" in info['case_title']
-                                            x_offset = Inches(1.8) if is_mp4_layout else Inches(0.9)
+                                            x_offset = Inches(1.8) if is_mp4_layout else Inches(1.0)
                                             
                                             slide.shapes.add_picture(
                                                 io.BytesIO(resp_logo.content), 
