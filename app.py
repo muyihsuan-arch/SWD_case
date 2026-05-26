@@ -164,35 +164,34 @@ def main():
         return
 
     # -----------------------------------------------------------------
-    # 【第一階段】常駐戰情管理台 + 搜尋列表 (支援手機優化被動聽感)
+    # 【第一階段】常駐戰情管理台 + 搜尋列表
     # -----------------------------------------------------------------
     if not st.session_state.confirmed_stage:
         st.markdown("<h2 style='text-align: center;'>📂 全家通路媒體資料庫</h2>", unsafe_allow_html=True)
         st.markdown("---")
         
-        # 💡 圖2功能實現：常駐戰情管理台 (釘選在頂部)
         if st.session_state.selected_uids:
             st.markdown("### 📊 戰情管理台 (已挑選項目)")
-            
             for idx, uid in enumerate(st.session_state.selected_uids):
                 matched_rows = df[df['uid'] == uid]
                 if matched_rows.empty: continue
                 case_info = matched_rows.iloc[0]
                 
-                # 橫向輕量化排版
                 col_name, col_audio, col_del = st.columns([5, 4, 1])
                 with col_name:
                     st.caption(f"**案例 {idx+1}**")
                     st.markdown(f"📄 {case_info['short']}")
                 with col_audio:
-                    # 💡 圖2修正核心：改回「載入音訊」原始被動按鈕，防止手機網頁載入過重卡死
-                    if st.button("▶️ 載入音訊", key=f"panel_play_{uid}", use_container_width=True):
-                        with st.spinner("載入中..."):
-                            b64 = get_audio_base64(case_info['link'])
-                            if b64:
-                                st.audio(b64)
-                            else:
-                                st.error("音檔讀取失敗")
+                    t_low = str(case_info['title']).lower()
+                    is_audio_file = any(ext in t_low for ext in ['.mp3', '.wav', '.m4a']) or "企頻" in str(case_info['type']).lower()
+                    
+                    if is_audio_file:
+                        if st.button("▶️ 載入音訊", key=f"panel_play_{uid}", use_container_width=True):
+                            with st.spinner("載入中..."):
+                                b64 = get_audio_base64(case_info['link'])
+                                if b64: st.audio(b64)
+                    else:
+                        st.caption("📺 影片/圖像檔 (不開放網頁試聽)")
                 with col_del:
                     st.markdown("剔除")
                     if st.button("❌", key=f"panel_del_{uid}", use_container_width=True):
@@ -200,22 +199,18 @@ def main():
                         st.rerun()
             st.markdown("---")
 
-        # 進度與按鈕合併顯示列
         c_status, c_ok = st.columns([3, 2])
         with c_status:
             st.markdown(f"📥 已挑選： **{len(st.session_state.selected_uids)} / 6**")
         with c_ok:
-            # 💡 圖1修正核心：將按鈕字樣改名為「確認挑選項目」
             if st.button("👌 確認挑選項目", use_container_width=True, type="primary" if st.session_state.selected_uids else "secondary"):
                 if st.session_state.selected_uids:
                     st.session_state.confirmed_stage = True
                     st.rerun()
-                else:
-                    st.warning("請先在下方案例旁勾選！")
+                else: st.warning("請先在下方案例旁勾選！")
 
         st.markdown("---")
         
-        # 關鍵字搜尋與過濾
         search_query = st.text_input("🔍 關鍵字搜尋 (比對標題內容)")
         if 'last_search' not in st.session_state or st.session_state.last_search != search_query:
             st.session_state.display_count = 20
@@ -286,13 +281,13 @@ def main():
                 st.rerun()
 
     # -----------------------------------------------------------------
-    # 【第二階段】配置與最終 PPTX 封裝生成頁面
+    # 【第二階段】配置與最終 PPTX 封裝生成頁面 (完整支援影片與音訊雙軌嵌入)
     # -----------------------------------------------------------------
     if st.session_state.confirmed_stage and st.session_state.selected_uids:
         st.markdown("""
         <div style="background-color:#e0f2fe; padding:20px; border-radius:10px; border-left:5px solid #0284c7; margin: 15px 0;">
             <h4 style="color:#0369a1; margin:0;">🎯 第二階段：確認各案例 Logo 與自訂簡報大標</h4>
-            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">請確認下方各案例對應的 Logo，音檔將在下載時「實體嵌入」至簡報中。</p>
+            <p style="font-size:14px; color:#0c4a6e; margin:5px 0 0 0;">請確認下方各案例對應的 Logo。音訊或影片檔將在下載時「實體嵌入」至簡報中。</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -318,8 +313,7 @@ def main():
                         break
             
             c_label, c_case_lbl, c_logo_sel, c_del = st.columns([1, 4, 3, 1])
-            with c_label:
-                st.markdown(f"\n\n**案例 {idx+1}**")
+            with c_label: st.markdown(f"\n\n**案例 {idx+1}**")
             with c_case_lbl:
                 st.markdown("案例名稱")
                 st.info(f"📄 {case_title}")
@@ -336,7 +330,7 @@ def main():
                 
                 final_pack_pairs[picked_uid] = {
                     'case_title': case_title,
-                    'case_audio_link': case_row['link'], 
+                    'case_link': case_row['link'], 
                     'logo_name': chosen_logo_for_row,
                     'logo_file_id': file_id
                 }
@@ -352,7 +346,6 @@ def main():
         
         c_back, c_action = st.columns([1, 4])
         with c_back:
-            # 💡 點擊「返回挑選項目」按鈕時保留當前剩餘進度
             if st.button("🔙 返回挑選更多案例", use_container_width=True, key="unique_back_btn"):
                 st.session_state.confirmed_stage = False
                 st.rerun()
@@ -367,19 +360,21 @@ def main():
                 ppt_buffer = io.BytesIO()
                 
                 if st.button("🎨 確認無誤！開始排版並下載六宮格提案 PPTX", use_container_width=True, type="primary"):
-                    with st.spinner("🚀 正在下載音檔與 Logo，並自動排版六宮格簡報中..."):
+                    with st.spinner("🚀 正在下載多媒體素材與 Logo，並自動封裝六宮格簡報中..."):
                         try:
                             prs = Presentation()
                             prs.slide_width = Inches(13.333)
                             prs.slide_height = Inches(7.5)
                             slide = prs.slides.add_slide(prs.slide_layouts[6])
                             
+                            # 主標題
                             title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(0.8))
                             title_box.text_frame.paragraphs[0].text = str(custom_ppt_title).strip()
                             title_box.text_frame.paragraphs[0].font.size = Pt(28)
                             title_box.text_frame.paragraphs[0].font.bold = True
                             title_box.text_frame.paragraphs[0].font.name = "Microsoft JhengHei"
                             
+                            # 六宮格標準坐標
                             x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
                             y_coords = [Inches(1.8), Inches(4.6)]
                             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -389,6 +384,7 @@ def main():
                                 row_idx, col_idx = idx // 3, idx % 3   
                                 current_x, current_y = x_coords[col_idx], y_coords[row_idx]
                                 
+                                # 1. 繪製案例文字框
                                 text_box = slide.shapes.add_textbox(current_x, current_y, Inches(3.8), Inches(0.5))
                                 text_box.text_frame.word_wrap = True
                                 p_case = text_box.text_frame.paragraphs[0]
@@ -396,36 +392,61 @@ def main():
                                 p_case.font.size = Pt(11)
                                 p_case.font.name = "Microsoft JhengHei"
                                 
-                                if info['case_audio_link']:
+                                # 2. 💡 智慧辨識多媒體類型：自動判定音訊 (.mp3) 或影片 (.mp4)
+                                if info['case_link']:
                                     try:
-                                        audio_url = info['case_audio_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_audio_link'] else info['case_audio_link']
-                                        resp_audio = requests.get(audio_url, headers=headers, timeout=15)
-                                        if resp_audio.status_code == 200:
-                                            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_audio:
-                                                tmp_audio.write(resp_audio.content)
-                                                tmp_audio_path = tmp_audio.name
+                                        media_url = info['case_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_link'] else info['case_link']
+                                        resp_media = requests.get(media_url, headers=headers, timeout=20)
+                                        
+                                        if resp_media.status_code == 200:
+                                            # 判定是不是影片
+                                            is_mp4 = any(ext in info['case_title'].lower() for ext in ['.mp4', '.mov']) or "新鮮視" in info['case_title'] or "側帶" in info['case_title']
+                                            suffix_str = '.mp4' if is_mp4 else '.mp3'
+                                            mime_str = 'video/mp4' if is_mp4 else 'audio/mpeg'
                                             
-                                            slide.shapes.add_movie(
-                                                tmp_audio_path,
-                                                current_x + Inches(0.2),
-                                                current_y + Inches(0.75),
-                                                width=Inches(0.4),
-                                                height=Inches(0.4),
-                                                poster_frame_image=None,
-                                                mime_type='audio/mpeg'
-                                            )
-                                            try: os.unlink(tmp_audio_path)
+                                            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix_str) as tmp_media:
+                                                tmp_media.write(resp_media.content)
+                                                tmp_media_path = tmp_media.name
+                                            
+                                            if is_mp4:
+                                                # 📺 影片嵌入邏輯：在格子左側畫出一個小型的影片播放視窗（寬1.4吋，高1.0吋）
+                                                slide.shapes.add_movie(
+                                                    tmp_media_path,
+                                                    current_x + Inches(0.2),
+                                                    current_y + Inches(0.65),
+                                                    width=Inches(1.4),
+                                                    height=Inches(1.0),
+                                                    poster_frame_image=None,
+                                                    mime_type=mime_str
+                                                )
+                                            else:
+                                                # 🎵 音訊嵌入邏輯：維持小喇叭圖示
+                                                slide.shapes.add_movie(
+                                                    tmp_media_path,
+                                                    current_x + Inches(0.2),
+                                                    current_y + Inches(0.75),
+                                                    width=Inches(0.4),
+                                                    height=Inches(0.4),
+                                                    poster_frame_image=None,
+                                                    mime_type=mime_str
+                                                )
+                                            try: os.unlink(tmp_media_path)
                                             except: pass
                                     except: pass
                                 
+                                # 3. 嵌入去背品牌 Logo 圖片 (自動與多媒體物件錯開)
                                 if info.get('logo_file_id') and info['logo_name'] != "請選擇確切客戶 Logo":
                                     try:
                                         direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
                                         resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
                                         if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
+                                            # 如果是影片，Logo稍微往右移一點 (Inches(1.8))，避免跟影片框重疊
+                                            is_mp4_layout = any(ext in info['case_title'].lower() for ext in ['.mp4', '.mov']) or "新鮮視" in info['case_title'] or "側帶" in info['case_title']
+                                            x_offset = Inches(1.8) if is_mp4_layout else Inches(0.9)
+                                            
                                             slide.shapes.add_picture(
                                                 io.BytesIO(resp_logo.content), 
-                                                current_x + Inches(0.9), 
+                                                current_x + x_offset, 
                                                 current_y + Inches(0.65), 
                                                 width=Inches(1.6)
                                             )
@@ -445,8 +466,7 @@ def main():
                             )
                         except Exception as e:
                             st.error(f"❌ 簡報自動生成失敗，原因：{str(e)}")
-            else:
-                st.warning("⚠️ 您的挑選清單目前為空，請點選左下角返回重新挑選案例。")
+            else: st.warning("⚠️ 您的挑選清單目前為空。")
         st.markdown("---")
 
 if __name__ == "__main__":
