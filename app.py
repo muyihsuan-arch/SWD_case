@@ -82,48 +82,11 @@ def load_logo_data():
     except:
         return pd.DataFrame(columns=['category', 'client_name', 'logo_link'])
 
-# === 4. UI 元件 ===
-def render_copy_ui(label, text_to_copy, is_disabled=False, warning_msg=""):
-    if is_disabled:
-        html_code = f"""
-        <div style="background-color:#fff5f5;padding:12px;border-radius:8px;border:1px solid #feb2b2;margin-bottom:10px;">
-            <label style="font-size:12px;color:#c53030;font-weight:bold;">{label}</label>
-            <p style="font-size:13px;color:#333;margin:8px 0;line-height:1.4;">⚠️ {warning_msg}</p>
-        </div>
-        """
-    else:
-        html_code = f"""
-        <div style="background-color:#f8f9fa;padding:10px;border-radius:8px;border:1px solid #eee;margin-bottom:10px;">
-            <label style="font-size:12px;color:#666;">{label}</label>
-            <input type="text" value="{text_to_copy}" id="copyInput" readonly style="width:100%;padding:8px;margin:5px 0;border:1px solid #ddd;border-radius:4px;">
-            <button onclick="copyToClipboard()" style="width:100%;padding:10px;background:#0097DA;color:white;border:none;border-radius:5px;cursor:pointer;font-weight:bold;">📋 點此複製網址</button>
-            <script>
-                function copyToClipboard() {{
-                    var copyText = document.getElementById("copyInput");
-                    copyText.select();
-                    navigator.clipboard.writeText(copyText.value).then(function() {{ alert("✅ 複製成功！"); }});
-                }}
-            </script>
-        </div>
-        """
-    components.html(html_code, height=150)
-
-@st.dialog("🔗 分享檔案權限")
-def show_share_dialog(display_name, link, uid, is_video=False, is_image=False):
-    st.write(f"📄 **{display_name}**")
-    render_copy_ui("🏢 內部分享連結 (同仁下載用)", link)
-    if is_video:
-        render_copy_ui("🌏 外部分享連結", "", is_disabled=True, warning_msg="影片涉及『客戶版權』及『全家便利商店場域』，不提供對外分享。")
-    elif is_image:
-        render_copy_ui("🌏 外部分享連結", "", is_disabled=True, warning_msg="此為『圖片檔』，涉及版權保護，不提供對外分享。")
-    else:
-        share_link = f"{SITE_URL}?id={uid}"
-        render_copy_ui("🌏 外部分享連結 (客戶試聽/防下載)", share_link)
-
 # === 5. 主程式架構 ===
 def main():
     st.set_page_config(page_title="全家通路媒體資料庫", layout="centered")
     
+    # 直接注入全域網頁樣式，強制隱藏右下角的 "Press Enter to apply" 英文
     st.markdown("""
         <style>
         .stTextInput div[data-testid="stWidgetInstructions"] {
@@ -381,7 +344,7 @@ def main():
                             prs.slide_height = Inches(7.5)
                             slide = prs.slides.add_slide(prs.slide_layouts[6])
                             
-                            # 大標題：全寬、絕對置中、字級 36 級字
+                            # 大標題設定
                             title_box = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12.133), Inches(1.0))
                             tf = title_box.text_frame
                             tf.word_wrap = True
@@ -392,12 +355,11 @@ def main():
                             p_title.font.name = "Microsoft JhengHei"
                             p_title.alignment = PP_ALIGN.CENTER 
                             
-                            # 六宮格標準布局坐標
                             x_coords = [Inches(0.6), Inches(4.8), Inches(9.0)]
                             y_coords = [Inches(2.0), Inches(4.7)]
                             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
                             
-                            # 預先下載純音訊專用去背小喇叭圖標
+                            # 預先下載音訊用去背小喇叭
                             resp_icon = requests.get(DEFAULT_SPEAKER_ICON_URL, headers=headers, timeout=5)
                             icon_bytes = resp_icon.content if resp_icon.status_code == 200 else None
                             
@@ -406,7 +368,6 @@ def main():
                                 row_idx, col_idx = idx // 3, idx % 3   
                                 current_x, current_y = x_coords[col_idx], y_coords[row_idx]
                                 
-                                # 繪製案例文字標題框
                                 text_box = slide.shapes.add_textbox(current_x, current_y, Inches(3.8), Inches(0.5))
                                 text_box.text_frame.word_wrap = True
                                 p_case = text_box.text_frame.paragraphs[0]
@@ -414,17 +375,25 @@ def main():
                                 p_case.font.size = Pt(11)
                                 p_case.font.name = "Microsoft JhengHei"
                                 
-                                # ⚡ 終極嚴格影音雙軌識別邏輯：避免任何誤判
-                                title_lower = info['case_title'].lower()
-                                type_lower = info['case_type'].lower()
+                                # 💡 修正核心：建立最嚴格的「副檔名優先」切分流機制
+                                title_clean = info['case_title'].replace(" ", "").lower()
+                                type_clean = info['case_type'].replace(" ", "").lower()
+                                link_clean = info['case_link'].split('?')[0].lower()
                                 
-                                is_mp4 = (
-                                    any(ext in title_lower for ext in ['.mp4', '.mov']) or 
-                                    any(k in title_lower for k in ['新鮮視', '側帶', 'demo']) or
-                                    any(k in type_lower for k in ['新鮮視', '側帶', 'demo'])
-                                )
+                                is_explicit_audio = any(ext in link_clean for ext in ['.mp3', '.m4a', '.wav'])
+                                is_explicit_video = any(ext in link_clean for ext in ['.mp4', '.mov', '.avi'])
                                 
-                                # 影音下載與實體嵌入
+                                if is_explicit_audio:
+                                    is_mp4 = False
+                                elif is_explicit_video:
+                                    is_mp4 = True
+                                else:
+                                    # 欄位模糊對比：排除「demo」字眼，只認試算表寫死的「新鮮視、側帶」為影片
+                                    is_mp4 = (
+                                        any(k in title_clean for k in ['新鮮視', '側帶']) or 
+                                        any(k in type_clean for k in ['新鮮視', '側帶'])
+                                    )
+                                
                                 if info['case_link']:
                                     try:
                                         media_url = info['case_link'].split('?')[0] + "?download=1" if "sharepoint.com" in info['case_link'] else info['case_link']
@@ -439,18 +408,18 @@ def main():
                                                 tmp_media_path = tmp_media.name
                                             
                                             if is_mp4:
-                                                # 📺 實體影片：強迫在投影片內生成一個實體影片播放框（絕對不傳圖片流，避免任何小喇叭陰魂不散）
+                                                # 📺 原生影片播放預覽黑框
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
                                                     current_x + Inches(0.2),
                                                     current_y + Inches(0.65),
                                                     width=Inches(1.4),
                                                     height=Inches(1.0),
-                                                    poster_frame_image=None,  # 👈 徹底清除小喇叭，保留原始實體影片框
+                                                    poster_frame_image=None,  
                                                     mime_type=mime_str
                                                 )
                                             else:
-                                                # 🎵 實體音訊：純音軌才綁定精美小喇叭外觀
+                                                # 🎵 音訊專用去背小喇叭圖標
                                                 poster_stream = io.BytesIO(icon_bytes) if icon_bytes else None
                                                 slide.shapes.add_movie(
                                                     tmp_media_path,
@@ -465,14 +434,13 @@ def main():
                                             except: pass
                                     except: pass
                                 
-                                # 嵌入去背品牌 Logo 圖片
+                                # 嵌入去背品牌 Logo
                                 if info.get('logo_file_id') and info['logo_name'] != "請選擇確切客戶 Logo":
                                     try:
                                         direct_img_url = f"https://lh3.googleusercontent.com/u/0/d/{info['logo_file_id']}"
                                         resp_logo = requests.get(direct_img_url, headers=headers, timeout=10)
                                         if resp_logo.status_code == 200 and len(resp_logo.content) > 1000:
                                             x_offset = Inches(1.8) if is_mp4 else Inches(1.0)
-                                            
                                             slide.shapes.add_picture(
                                                 io.BytesIO(resp_logo.content), 
                                                 current_x + x_offset, 
